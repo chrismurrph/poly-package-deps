@@ -2,7 +2,10 @@
   "Dependency graph building and analysis for Polylith workspaces."
   (:require [poly-metrics.workspace :as ws]
             [poly-metrics.parse :as parse]
-            [clojure.tools.namespace.parse :as tns-parse]))
+            [clojure.tools.namespace.parse :as tns-parse]
+            [clojure.java.io :as io]
+            [clojure.edn :as edn]
+            [clojure.string :as str]))
 
 (defn brick-dependencies
   "Find the brick dependencies for a single brick.
@@ -167,6 +170,69 @@
        (into #{})))
 
 ;; Namespace-level dependency analysis for abstractness calculation
+
+(defn collect-base-requires
+  "Collect which components each base requires.
+   Returns a map of {component-name #{base-names-that-use-it}}."
+  [workspace-root]
+  (let [bases (or (ws/find-bases workspace-root) #{})
+        ns-to-brick (ws/build-ns-to-brick-map workspace-root)
+
+        collect-for-base (fn [base-name]
+                           (let [{:keys [src-dir]} (ws/brick-paths workspace-root :base base-name)
+                                 files (parse/find-clj-files src-dir)]
+                             (->> files
+                                  (mapcat (fn [f]
+                                            (when-let [ns-decl (parse/read-ns-decl f)]
+                                              (tns-parse/deps-from-ns-decl ns-decl))))
+                                  ;; Keep only workspace namespaces
+                                  (filter #(get ns-to-brick %))
+                                  ;; Get the component name for each required ns
+                                  (keep (fn [req-ns]
+                                          (let [brick-info (get ns-to-brick req-ns)]
+                                            (when (= :component (:brick-type brick-info))
+                                              [(:brick-name brick-info) base-name]))))
+                                  distinct)))]
+    ;; Group by component, collecting base names
+    (reduce (fn [acc [comp-name base-name]]
+              (update acc comp-name (fnil conj #{}) base-name))
+            {}
+            (mapcat collect-for-base bases))))
+
+(defn collect-project-requires
+  "Collect which components each project requires.
+   Returns a map of {component-name #{project-names-that-use-it}}.
+   Projects are detected by scanning projects/*/deps.edn for local/root references."
+  [workspace-root]
+  (let [projects-dir (io/file workspace-root "projects")]
+    (if (and (.exists projects-dir) (.isDirectory projects-dir))
+      (let [project-dirs (->> (.listFiles projects-dir)
+                              (filter #(.isDirectory %)))]
+        (reduce (fn [acc project-dir]
+                  (let [project-name (.getName project-dir)
+                        deps-file (io/file project-dir "deps.edn")]
+                    (if (.exists deps-file)
+                      (let [deps-edn (edn/read-string (slurp deps-file))
+                            ;; Get all local/root deps from :deps and :aliases
+                            local-deps (->> (concat
+                                             (vals (:deps deps-edn))
+                                             (mapcat #(vals (:extra-deps %)) (vals (:aliases deps-edn))))
+                                            (filter map?)
+                                            (keep :local/root)
+                                            ;; Extract component name from path like "../../components/util"
+                                            (keep (fn [path]
+                                                    (when (string? path)
+                                                      (let [parts (clojure.string/split path #"/")]
+                                                        (when (some #{"components"} parts)
+                                                          (last parts)))))))]
+                        (reduce (fn [acc2 comp-name]
+                                  (update acc2 comp-name (fnil conj #{}) project-name))
+                                acc
+                                local-deps))
+                      acc)))
+                {}
+                project-dirs))
+      {})))
 
 (defn collect-all-external-requires
   "Collect all namespace dependencies from components only.

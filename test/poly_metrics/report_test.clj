@@ -14,21 +14,27 @@
     :ce 0
     :instability 0.0
     :abstractness 0.2
-    :distance 0.8}
+    :distance 0.8
+    :used-by-bases #{"poly-cli"}
+    :used-by-projects #{"dev" "poly"}}
    {:brick-name "command"
     :brick-type :component
     :ca 1
     :ce 10
     :instability 0.91
     :abstractness 0.1
-    :distance 0.01}
+    :distance 0.01
+    :used-by-bases #{"poly-cli"}
+    :used-by-projects #{}}
    {:brick-name "poly-cli"
     :brick-type :base
     :ca 0
     :ce 5
     :instability 1.0
     :abstractness 0.0
-    :distance 0.0}])
+    :distance 0.0
+    :used-by-bases #{}
+    :used-by-projects #{}}])
 
 (def sample-health
   {:brick-count 3
@@ -55,7 +61,9 @@
       (is (str/includes? row "component"))
       (is (str/includes? row "0.00"))  ;; instability
       (is (str/includes? row "0.20"))  ;; abstractness
-      (is (str/includes? row "0.80"))))) ;; distance
+      (is (str/includes? row "0.80"))  ;; distance
+      (is (str/includes? row "poly-cli"))  ;; bases
+      (is (str/includes? row "dev,poly"))))) ;; projects (sorted)
 
 (deftest metrics-table-header-test
   (testing "header contains column names"
@@ -66,7 +74,9 @@
       (is (str/includes? header "Ce"))
       (is (str/includes? header "I"))
       (is (str/includes? header "A"))
-      (is (str/includes? header "D")))))
+      (is (str/includes? header "D"))
+      (is (str/includes? header "Bases"))
+      (is (str/includes? header "Projects")))))
 
 (deftest edn-report-test
   (testing "generates valid EDN structure"

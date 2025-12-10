@@ -113,7 +113,9 @@
     (let [graph (graph/build-dependency-graph polylith-root)
           inverted (graph/invert-graph graph)
           external-requires (graph/collect-all-external-requires polylith-root)
-          m (metrics/brick-metrics polylith-root :component "util" graph inverted external-requires)]
+          base-requires (graph/collect-base-requires polylith-root)
+          project-requires (graph/collect-project-requires polylith-root)
+          m (metrics/brick-metrics polylith-root :component "util" graph inverted external-requires base-requires project-requires)]
       (is (= "util" (:brick-name m)))
       (is (= :component (:brick-type m)))
       (is (integer? (:ca m)))
@@ -125,7 +127,9 @@
       (is (<= (:instability m) 1.0))
       (is (>= (:abstractness m) 0.0))
       (is (<= (:abstractness m) 1.0))
-      (is (>= (:distance m) 0.0)))))
+      (is (>= (:distance m) 0.0))
+      (is (set? (:used-by-bases m)))
+      (is (set? (:used-by-projects m))))))
 
 (deftest all-metrics-test
   (testing "calculates metrics for all components (excludes bases)"
@@ -136,6 +140,9 @@
       (is (every? #(= :component (:brick-type %)) metrics))
       (is (every? #(contains? % :brick-name) metrics))
       (is (every? #(contains? % :distance) metrics))
+      ;; Check for base/project usage fields
+      (is (every? #(contains? % :used-by-bases) metrics))
+      (is (every? #(contains? % :used-by-projects) metrics))
       ;; Check that util component is included
       (is (some #(= "util" (:brick-name %)) metrics)))))
 
