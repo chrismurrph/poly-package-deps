@@ -29,43 +29,42 @@
     (is (= 0.75 (metrics/instability 1 3)))))
 
 (deftest abstractness-test
-  (testing "A=1 when no leaky impl namespaces (all via interface)"
-    (is (= 1.0 (metrics/abstractness 5 0)))
-    (is (= 1.0 (metrics/abstractness 1 0))))
+  (testing "A=1 when all external access is via interface"
+    (is (= 1.0 (metrics/abstractness 5 5)))
+    (is (= 1.0 (metrics/abstractness 1 1))))
 
-  (testing "A=0 when no interface namespaces (all leaky)"
+  (testing "A=0 when all external access is to implementation"
     (is (= 0.0 (metrics/abstractness 0 5))))
 
-  (testing "A=1 when no external access at all"
+  (testing "A=1 when no external access (fully abstract - nothing exposed)"
     (is (= 1.0 (metrics/abstractness 0 0))))
 
   (testing "calculates ratio correctly"
-    ;; 1 interface, 4 leaky impl = 1/5 = 0.2
-    (is (= 0.2 (metrics/abstractness 1 4)))
-    ;; 2 interface, 2 leaky impl = 2/4 = 0.5
-    (is (= 0.5 (metrics/abstractness 2 2)))))
+    ;; 1 interface, 5 total accessed = 0.2
+    (is (= 0.2 (metrics/abstractness 1 5)))
+    ;; 2 interface, 4 total accessed = 0.5
+    (is (= 0.5 (metrics/abstractness 2 4)))))
 
 (deftest distance-test
-  (testing "D=0 for ideal cases"
-    ;; A=1: fully abstract (any instability)
+  (testing "D=0 on main sequence (A + I = 1)"
+    ;; A=1, I=0: fully abstract, fully stable
     (is (= 0.0 (metrics/distance 1.0 0.0)))
-    (is (= 0.0 (metrics/distance 1.0 0.5)))
-    (is (= 0.0 (metrics/distance 1.0 1.0)))
-    ;; I=1: fully unstable (any abstractness) - nothing depends, so leakage doesn't matter
+    ;; A=0, I=1: fully concrete, fully unstable
     (is (= 0.0 (metrics/distance 0.0 1.0)))
-    (is (= 0.0 (metrics/distance 0.5 1.0))))
+    ;; A=0.5, I=0.5: balanced
+    (is (= 0.0 (metrics/distance 0.5 0.5))))
 
-  (testing "D=1 for worst case: concrete and stable (zone of pain)"
-    ;; A=0, I=0: leaky abstraction that many depend on
-    (is (= 1.0 (metrics/distance 0.0 0.0))))
+  (testing "D=1 for worst cases (corners)"
+    ;; A=0, I=0: concrete and stable (zone of pain)
+    (is (= 1.0 (metrics/distance 0.0 0.0)))
+    ;; A=1, I=1: abstract and unstable (zone of uselessness)
+    (is (= 1.0 (metrics/distance 1.0 1.0))))
 
-  (testing "D proportional to (1-A) * (1-I)"
-    ;; A=0, I=0.5: half unstable, fully leaky
+  (testing "D=0.5 for intermediate cases"
     (is (= 0.5 (metrics/distance 0.0 0.5)))
-    ;; A=0.5, I=0: fully stable, half leaky
     (is (= 0.5 (metrics/distance 0.5 0.0)))
-    ;; A=0.5, I=0.5: half each
-    (is (= 0.25 (metrics/distance 0.5 0.5)))))
+    (is (= 0.5 (metrics/distance 1.0 0.5)))
+    (is (= 0.5 (metrics/distance 0.5 1.0)))))
 
 (defn approx=
   "Check if two numbers are approximately equal within epsilon."

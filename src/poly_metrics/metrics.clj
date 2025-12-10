@@ -14,38 +14,36 @@
       (double (/ ce total)))))
 
 (defn abstractness
-  "Calculate abstractness metric.
-   New formula: A = interface-ns / (interface-ns + leaky-impl-ns)
-   Only counts namespaces that are externally visible.
-   Ranges from 0 (all external access is to impl) to 1 (all external access is via interface)."
-  [interface-ns-count leaky-impl-ns-count]
-  (let [total (+ interface-ns-count leaky-impl-ns-count)]
-    (if (zero? total)
-      1.0  ;; No external visibility = perfectly abstracted (or unused)
-      (double (/ interface-ns-count total)))))
+  "Calculate abstractness metric: A = interface-ns / total-ns (externally accessed).
+   Measures what proportion of external access goes through interface namespaces.
+   Ranges from 0 (all access to impl) to 1 (all access via interface)."
+  [interface-ns-count total-ns-count]
+  (if (zero? total-ns-count)
+    1.0  ;; No external access = fully abstract (nothing exposed)
+    (double (/ interface-ns-count total-ns-count))))
 
 (defn distance
-  "Calculate distance: D = (1 - A) * (1 - I).
+  "Calculate distance from main sequence: D = |A + I - 1|.
    Ranges from 0 (ideal) to 1 (worst).
 
-   This formula penalizes components that are both:
-   - Leaky (low A): external code accesses implementation directly
-   - Stable (low I): many other components depend on this one
+   The 'main sequence' is the line where A + I = 1.
+   - Stable components (low I) should be abstract (high A)
+   - Unstable components (high I) should be concrete (low A)
 
-   Entry-level components (high I) get low distance since there's
-   nothing to leak to. Leaky stable components are the real problem."
+   Zone of pain: A=0, I=0 (concrete and stable) -> D=1
+   Zone of uselessness: A=1, I=1 (abstract and unstable) -> D=1"
   [abstractness-val instability-val]
-  (* (- 1.0 abstractness-val) (- 1.0 instability-val)))
+  (Math/abs (+ abstractness-val instability-val -1.0)))
 
 (defn brick-metrics
   "Calculate all metrics for a single brick.
    Returns a map with :brick-name, :brick-type, :ca, :ce, :instability, :abstractness, :distance,
-   plus :interface-ns and :leaky-impl-ns counts."
+   plus :abstract-ns and :total-ns counts."
   [workspace-root brick-type brick-name graph inverted-graph external-requires]
   (let [ca (graph/afferent-coupling inverted-graph brick-name)
         ce (graph/efferent-coupling graph brick-name)
         i (instability ca ce)
-        abs-data (graph/brick-abstractness-data workspace-root brick-name external-requires)
+        abs-data (graph/brick-abstractness-data workspace-root brick-type brick-name external-requires)
         a (:abstractness abs-data)
         d (distance a i)]
     {:brick-name brick-name
@@ -55,14 +53,13 @@
      :instability i
      :abstractness a
      :distance d
-     :interface-ns (:interface-ns abs-data)
-     :leaky-impl-ns (:leaky-impl-ns abs-data)}))
+     :abstract-ns (:abstract-ns abs-data)
+     :total-ns (:total-ns abs-data)}))
 
 (defn all-metrics
   "Calculate metrics for all components in a workspace.
    Returns a sequence of metric maps, one per component.
-   Excludes bases - they are entry points whose consumers are outside the system,
-   so abstractness cannot be meaningfully measured for them."
+   Excludes bases - they are entry points whose consumers are outside the system."
   [workspace-root]
   (let [graph (graph/build-dependency-graph workspace-root)
         inverted (graph/invert-graph graph)

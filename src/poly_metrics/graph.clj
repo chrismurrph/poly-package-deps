@@ -224,14 +224,16 @@
     (count (remove ws/interface-ns? visible-ns))))
 
 (defn brick-abstractness-data
-  "Calculate abstractness data for a brick.
-   Returns {:interface-ns count, :leaky-impl-ns count, :abstractness ratio}."
-  [workspace-root brick-name external-requires]
-  (let [ext-interface (brick-external-interface-ns workspace-root brick-name external-requires)
-        ext-impl (brick-external-impl-ns workspace-root brick-name external-requires)
-        total-external (+ ext-interface ext-impl)]
-    {:interface-ns ext-interface
-     :leaky-impl-ns ext-impl
-     :abstractness (if (zero? total-external)
-                     1.0  ;; No external visibility = perfectly abstracted (or unused)
-                     (double (/ ext-interface total-external)))}))
+  "Calculate abstractness data for a brick based on external access patterns.
+   A = (interface-ns accessed externally) / (total-ns accessed externally)
+   This measures whether other components use the interface or bypass it.
+   Returns {:abstract-ns count, :total-ns count, :abstractness ratio}."
+  [workspace-root brick-type brick-name external-requires]
+  (let [visible-ns (externally-visible-namespaces workspace-root brick-name external-requires)
+        abstract-ns (count (filter ws/interface-ns? visible-ns))
+        total-ns (count visible-ns)]
+    {:abstract-ns abstract-ns
+     :total-ns total-ns
+     :abstractness (if (zero? total-ns)
+                     1.0  ;; No external access = fully abstract (nothing to leak)
+                     (double (/ abstract-ns total-ns)))}))
