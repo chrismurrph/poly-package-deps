@@ -46,23 +46,26 @@
     (is (= 0.5 (metrics/abstractness 2 2)))))
 
 (deftest distance-test
-  (testing "D=0 for ideal cases on main sequence"
-    ;; A=1, I=0: fully abstract, fully stable
+  (testing "D=0 for ideal cases"
+    ;; A=1: fully abstract (any instability)
     (is (= 0.0 (metrics/distance 1.0 0.0)))
-    ;; A=0, I=1: fully concrete, fully unstable
+    (is (= 0.0 (metrics/distance 1.0 0.5)))
+    (is (= 0.0 (metrics/distance 1.0 1.0)))
+    ;; I=1: fully unstable (any abstractness) - nothing depends, so leakage doesn't matter
     (is (= 0.0 (metrics/distance 0.0 1.0)))
-    ;; A=0.5, I=0.5: balanced
-    (is (= 0.0 (metrics/distance 0.5 0.5))))
+    (is (= 0.0 (metrics/distance 0.5 1.0))))
 
-  (testing "D>0 for off-main-sequence cases"
-    ;; A=0, I=0: concrete and stable (zone of pain)
-    (is (= 1.0 (metrics/distance 0.0 0.0)))
-    ;; A=1, I=1: abstract and unstable (zone of uselessness)
-    (is (= 1.0 (metrics/distance 1.0 1.0))))
+  (testing "D=1 for worst case: concrete and stable (zone of pain)"
+    ;; A=0, I=0: leaky abstraction that many depend on
+    (is (= 1.0 (metrics/distance 0.0 0.0))))
 
-  (testing "D≈0.5 for intermediate cases"
+  (testing "D proportional to (1-A) * (1-I)"
+    ;; A=0, I=0.5: half unstable, fully leaky
     (is (= 0.5 (metrics/distance 0.0 0.5)))
-    (is (= 0.5 (metrics/distance 0.5 0.0)))))
+    ;; A=0.5, I=0: fully stable, half leaky
+    (is (= 0.5 (metrics/distance 0.5 0.0)))
+    ;; A=0.5, I=0.5: half each
+    (is (= 0.25 (metrics/distance 0.5 0.5)))))
 
 (defn approx=
   "Check if two numbers are approximately equal within epsilon."
@@ -126,11 +129,12 @@
       (is (>= (:distance m) 0.0)))))
 
 (deftest all-metrics-test
-  (testing "calculates metrics for all bricks"
+  (testing "calculates metrics for all components (excludes bases)"
     (let [metrics (metrics/all-metrics polylith-root)
-          components (ws/find-components polylith-root)
-          bases (ws/find-bases polylith-root)]
-      (is (= (+ (count components) (count bases)) (count metrics)))
+          components (ws/find-components polylith-root)]
+      ;; Only components, not bases
+      (is (= (count components) (count metrics)))
+      (is (every? #(= :component (:brick-type %)) metrics))
       (is (every? #(contains? % :brick-name) metrics))
       (is (every? #(contains? % :distance) metrics))
       ;; Check that util component is included

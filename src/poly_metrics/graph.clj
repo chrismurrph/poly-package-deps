@@ -169,39 +169,37 @@
 ;; Namespace-level dependency analysis for abstractness calculation
 
 (defn collect-all-external-requires
-  "Collect all namespace dependencies from all bricks.
-   Returns a map of {required-ns #{requiring-brick-names}}.
-   Only includes requires that cross brick boundaries."
+  "Collect all namespace dependencies from components only.
+   Returns a map of {required-ns #{requiring-component-names}}.
+   Only includes requires that cross brick boundaries.
+   Excludes bases as requirers - we only count component-to-component access
+   for abstractness calculation (bases are entry points, outside the system)."
   [workspace-root]
-  (let [config (ws/read-workspace-config workspace-root)
-        top-ns (:top-namespace config)
-        components (or (ws/find-components workspace-root) #{})
-        bases (or (ws/find-bases workspace-root) #{})
+  (let [components (or (ws/find-components workspace-root) #{})
         ns-to-brick (ws/build-ns-to-brick-map workspace-root)
 
-        collect-for-brick (fn [brick-type brick-name]
-                            (let [{:keys [src-dir]} (ws/brick-paths workspace-root brick-type brick-name)
-                                  files (parse/find-clj-files src-dir)]
-                              (->> files
-                                   (mapcat (fn [f]
-                                             (when-let [ns-decl (parse/read-ns-decl f)]
-                                               (tns-parse/deps-from-ns-decl ns-decl))))
-                                   ;; Keep only workspace namespaces, not external libs
-                                   (filter #(get ns-to-brick %))
-                                   ;; Tag each with the requiring brick
-                                   (map (fn [req-ns] [req-ns brick-name])))))]
+        collect-for-component (fn [comp-name]
+                                (let [{:keys [src-dir]} (ws/brick-paths workspace-root :component comp-name)
+                                      files (parse/find-clj-files src-dir)]
+                                  (->> files
+                                       (mapcat (fn [f]
+                                                 (when-let [ns-decl (parse/read-ns-decl f)]
+                                                   (tns-parse/deps-from-ns-decl ns-decl))))
+                                       ;; Keep only workspace namespaces, not external libs
+                                       (filter #(get ns-to-brick %))
+                                       ;; Tag each with the requiring component
+                                       (map (fn [req-ns] [req-ns comp-name])))))]
 
     ;; Collect all requires and group by required namespace
-    (reduce (fn [acc [req-ns requiring-brick]]
+    ;; Only from components (not bases) - bases are entry points
+    (reduce (fn [acc [req-ns requiring-comp]]
               (let [required-brick (:brick-name (get ns-to-brick req-ns))]
                 ;; Only count if it crosses brick boundary
-                (if (not= required-brick requiring-brick)
-                  (update acc req-ns (fnil conj #{}) requiring-brick)
+                (if (not= required-brick requiring-comp)
+                  (update acc req-ns (fnil conj #{}) requiring-comp)
                   acc)))
             {}
-            (concat
-             (mapcat #(collect-for-brick :component %) components)
-             (mapcat #(collect-for-brick :base %) bases)))))
+            (mapcat collect-for-component components))))
 
 (defn externally-visible-namespaces
   "For a brick, return the set of its namespaces that are required by other bricks."

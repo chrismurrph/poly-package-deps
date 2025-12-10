@@ -64,84 +64,58 @@ This metric only considers namespaces that are **actually required by other comp
 
 Example: `util` has A=1.0, meaning all 29 components that depend on it use its interface namespaces, not its implementation namespaces directly.
 
-### 5. Distance (D) - "How balanced is this component?"
+### 5. Distance (D) - "How problematic is this component?"
 
-**Formula**: `D = |A + I - 1|`
+**Formula**: `D = (1 - A) * (1 - I)`
 
 Ranges from 0 (ideal) to 1 (worst).
 
-This is the key metric. It measures deviation from the "Main Sequence" - the ideal line where `A + I = 1`.
+This formula penalizes components that are both **leaky** (low A) and **stable** (low I). These are the real maintenance risks - many components depend on them, and they're coupled to implementation details.
 
-- **D ≈ 0**: The component's abstraction level matches its stability. Well-balanced.
-- **D > 0.5**: Something is off. The component may be hard to maintain.
+- **D = 0**: Either the interface is clean (A=1) or nothing depends on this component (I=1). No problem.
+- **D > 0**: Some leakage in a component that others depend on. The higher D, the more critical it is to fix.
 
 ---
 
-## Understanding Abstractness and Distance
+## Understanding the Metrics
 
-### What does Abstractness really measure?
+### What does Abstractness measure?
 
-Unlike the original JDepend metric that counted all namespaces, **poly-metrics only considers externally-visible namespaces** - those actually required by other components.
+Unlike the original JDepend metric that counted all namespaces, **poly-metrics only considers namespaces accessed by other components** (not bases or projects).
 
-This makes Abstractness a measure of **API cleanliness**:
+- **A = 1.0**: All access from other components goes through interface namespaces.
+- **A < 1.0**: Some components require your implementation namespaces directly.
+- **A = 0.0**: All access bypasses your interface entirely.
 
-- **A = 1.0**: Other components only use your interface namespaces. Your implementation is encapsulated.
-- **A < 1.0**: Some external code requires your implementation namespaces directly. This is a "leaky abstraction."
-- **A = 0.0**: All external access bypasses your interface entirely.
+Components with no other components depending on them get A=1.0 by default (nothing to leak).
 
-A component with no external dependencies gets A=1.0 by default (nothing to leak).
+### Why the new Distance formula?
 
-### Why does this matter?
+The original JDepend formula `D = |A + I - 1|` penalized unstable components even if they had clean interfaces. But in Polylith:
 
-When external code requires your implementation namespaces:
-- They're coupled to your internal details
-- Changing your implementation might break them
-- The interface isn't doing its job of hiding internals
+- Entry-level components (high I) naturally have nothing depending on them
+- What matters is **leaky stable components** - implementation details that many depend on
 
-### The "Main Sequence" and Distance
+The formula `D = (1 - A) * (1 - I)` only produces high distance when **both**:
+- The abstraction is leaky (A < 1)
+- The component is stable (I < 1) - meaning others depend on it
 
-The **Main Sequence** is the line where `A + I = 1`:
-
-```
-        1.0 +
-            |  Zone of        .
-Abstractness|  Uselessness  .
-            |             .
-        0.5 +           .    <- Main Sequence (A + I = 1)
-            |         .          Ideal components live here
-            |       .
-            |     .   Zone of
-        0.0 +   .     Pain
-            +---+---+---+---+
-           0.0     0.5     1.0
-               Instability
-```
-
-With the new abstractness calculation:
-
-- **Perfect components (A=1.0)** have D = |1.0 + I - 1| = I
-- **Stable with clean interface** (I=0, A=1.0): D=0 - ideal!
-- **Unstable with clean interface** (I=1, A=1.0): D=1 - abstract but unused
-- **Stable with leaky interface** (I=0, A=0): D=1 - zone of pain
-
-### When Distance matters
-
-**Leaky stable components** are the real problem:
+### The Zone of Pain
 
 ```
 antq: Ca=3, Ce=2, I=0.40, A=0.00, D=0.60
 ```
 
-This means:
+This is a problem because:
 - 3 components depend on antq
-- All external access is to implementation namespaces (A=0)
-- Other components are coupled to antq's internals
+- All access is to implementation namespaces (A=0)
+- Those components are coupled to antq's internals
 
 **The fix**: Route external access through interface namespaces.
 
-### When Distance doesn't matter
+### What about bases?
 
-**Leaf components** (high instability, nothing depends on them) with high distance aren't concerning - there's nothing to leak to since no one uses them.
+Bases are entry points - their consumers are outside the system (CLI, web server, etc.). Since we can't see how they're accessed externally, we exclude them from metrics.
 
 ---
 

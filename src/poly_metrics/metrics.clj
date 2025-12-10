@@ -25,15 +25,17 @@
       (double (/ interface-ns-count total)))))
 
 (defn distance
-  "Calculate distance from main sequence D = |A + I - 1|.
-   Ranges from 0 (ideal) to ~0.707 (worst case at A=0, I=0 or A=1, I=1).
+  "Calculate distance: D = (1 - A) * (1 - I).
+   Ranges from 0 (ideal) to 1 (worst).
 
-   The 'main sequence' is the line where A + I = 1.
-   Components on this line have the ideal balance:
-   - Abstract components should be stable (depended upon)
-   - Concrete components should be unstable (easy to change)"
+   This formula penalizes components that are both:
+   - Leaky (low A): external code accesses implementation directly
+   - Stable (low I): many other components depend on this one
+
+   Entry-level components (high I) get low distance since there's
+   nothing to leak to. Leaky stable components are the real problem."
   [abstractness-val instability-val]
-  (Math/abs (+ abstractness-val instability-val -1.0)))
+  (* (- 1.0 abstractness-val) (- 1.0 instability-val)))
 
 (defn brick-metrics
   "Calculate all metrics for a single brick.
@@ -57,19 +59,17 @@
      :leaky-impl-ns (:leaky-impl-ns abs-data)}))
 
 (defn all-metrics
-  "Calculate metrics for all bricks in a workspace.
-   Returns a sequence of metric maps, one per brick."
+  "Calculate metrics for all components in a workspace.
+   Returns a sequence of metric maps, one per component.
+   Excludes bases - they are entry points whose consumers are outside the system,
+   so abstractness cannot be meaningfully measured for them."
   [workspace-root]
   (let [graph (graph/build-dependency-graph workspace-root)
         inverted (graph/invert-graph graph)
         external-requires (graph/collect-all-external-requires workspace-root)
-        components (or (ws/find-components workspace-root) #{})
-        bases (or (ws/find-bases workspace-root) #{})]
-    (concat
-     (for [comp components]
-       (brick-metrics workspace-root :component comp graph inverted external-requires))
-     (for [base bases]
-       (brick-metrics workspace-root :base base graph inverted external-requires)))))
+        components (or (ws/find-components workspace-root) #{})]
+    (for [comp components]
+      (brick-metrics workspace-root :component comp graph inverted external-requires))))
 
 (defn codebase-health
   "Calculate overall codebase health metrics.
