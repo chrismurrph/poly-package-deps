@@ -38,8 +38,8 @@
 (defn brick-metrics
   "Calculate all metrics for a single brick.
    Returns a map with :brick-name, :brick-type, :ca, :ce, :instability, :abstractness, :distance,
-   plus :abstract-ns and :total-ns counts, and :used-by-bases/:used-by-projects."
-  [workspace-root brick-type brick-name graph inverted-graph external-requires base-requires project-requires]
+   plus :abstract-ns and :total-ns counts."
+  [workspace-root brick-type brick-name graph inverted-graph external-requires]
   (let [ca (graph/afferent-coupling inverted-graph brick-name)
         ce (graph/efferent-coupling graph brick-name)
         i (instability ca ce)
@@ -54,9 +54,7 @@
      :abstractness a
      :distance d
      :abstract-ns (:abstract-ns abs-data)
-     :total-ns (:total-ns abs-data)
-     :used-by-bases (get base-requires brick-name #{})
-     :used-by-projects (get project-requires brick-name #{})}))
+     :total-ns (:total-ns abs-data)}))
 
 (defn all-metrics
   "Calculate metrics for all components in a workspace.
@@ -66,11 +64,9 @@
   (let [graph (graph/build-dependency-graph workspace-root)
         inverted (graph/invert-graph graph)
         external-requires (graph/collect-all-external-requires workspace-root)
-        base-requires (graph/collect-base-requires workspace-root)
-        project-requires (graph/collect-project-requires workspace-root)
         components (or (ws/find-components workspace-root) #{})]
     (for [comp components]
-      (brick-metrics workspace-root :component comp graph inverted external-requires base-requires project-requires))))
+      (brick-metrics workspace-root :component comp graph inverted external-requires))))
 
 (defn codebase-health
   "Calculate overall codebase health metrics.

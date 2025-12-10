@@ -21,29 +21,25 @@
         (str "(" (count names) ")")))))
 
 (def ^:private col-brick 28)
-(def ^:private col-bases 24)
-(def ^:private col-projects 24)
 
 (defn metrics-table-row
   "Format a single brick's metrics as a table row."
   [m]
-  (format (str "%-" col-brick "s %-10s %3d %3d %5s %5s %5s  %-" col-bases "s %-" col-projects "s")
+  (format (str "%-" col-brick "s %-10s %3d %3d %5s %5s %5s")
           (:brick-name m)
           (name (:brick-type m))
           (:ca m)
           (:ce m)
           (format-metric (:instability m) 2)
           (format-metric (:abstractness m) 2)
-          (format-metric (:distance m) 2)
-          (format-usage (:used-by-bases m) col-bases)
-          (format-usage (:used-by-projects m) col-projects)))
+          (format-metric (:distance m) 2)))
 
 (defn metrics-table-header
   "Return the table header string."
   []
-  (let [total-width (+ col-brick 10 3 3 5 5 5 2 col-bases col-projects 4)]
-    (str (format (str "%-" col-brick "s %-10s %3s %3s %5s %5s %5s  %-" col-bases "s %-" col-projects "s")
-                 "Brick" "Type" "Ca" "Ce" "I" "A" "D" "Bases" "Projects")
+  (let [total-width (+ col-brick 10 4 4 6 6 6)]
+    (str (format (str "%-" col-brick "s %-10s %3s %3s %5s %5s %5s")
+                 "Brick" "Type" "Ca" "Ce" "I" "A" "D")
          "\n"
          (apply str (repeat total-width "-")))))
 
@@ -112,16 +108,14 @@
 (defn metric-to-json
   "Convert a metric map to JSON string."
   [m]
-  (format "{\"brick_name\":\"%s\",\"brick_type\":\"%s\",\"ca\":%d,\"ce\":%d,\"instability\":%.4f,\"abstractness\":%.4f,\"distance\":%.4f,\"used_by_bases\":%s,\"used_by_projects\":%s}"
+  (format "{\"brick_name\":\"%s\",\"brick_type\":\"%s\",\"ca\":%d,\"ce\":%d,\"instability\":%.4f,\"abstractness\":%.4f,\"distance\":%.4f}"
           (json-escape (:brick-name m))
           (name (:brick-type m))
           (:ca m)
           (:ce m)
           (double (:instability m))
           (double (:abstractness m))
-          (double (:distance m))
-          (set-to-json (or (:used-by-bases m) #{}))
-          (set-to-json (or (:used-by-projects m) #{}))))
+          (double (:distance m))))
 
 (defn health-to-json
   "Convert health map to JSON string."
@@ -324,28 +318,6 @@
       (doseq [dep (sort dependents)]
         (println (str "    - " dep)))))
   (println)
-
-  ;; Used by bases
-  (let [bases (:used-by-bases m)]
-    (println "USED BY BASES")
-    (if (empty? bases)
-      (println "  Not used directly by any base.")
-      (do
-        (println (format "  Used by %d base(s):" (count bases)))
-        (doseq [base (sort bases)]
-          (println (str "    - " base)))))
-    (println))
-
-  ;; Used by projects
-  (let [projects (:used-by-projects m)]
-    (println "USED BY PROJECTS")
-    (if (empty? projects)
-      (println "  Not included in any project.")
-      (do
-        (println (format "  Included in %d project(s):" (count projects)))
-        (doseq [project (sort projects)]
-          (println (str "    - " project)))))
-    (println))
 
   ;; Metrics with explanations
   (println "METRICS")

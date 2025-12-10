@@ -64,16 +64,18 @@ This metric only considers namespaces that are **actually required by other comp
 
 Example: `util` has A=1.0, meaning all 29 components that depend on it use its interface namespaces, not its implementation namespaces directly.
 
-### 5. Distance (D) - "How problematic is this component?"
+### 5. Distance (D) - "How far from the ideal?"
 
-**Formula**: `D = (1 - A) * (1 - I)`
+**Formula**: `D = |A + I - 1|` (standard JDepend formula)
 
 Ranges from 0 (ideal) to 1 (worst).
 
-This formula penalizes components that are both **leaky** (low A) and **stable** (low I). These are the real maintenance risks - many components depend on them, and they're coupled to implementation details.
+The "main sequence" is the line where A + I = 1. Components on this line balance abstraction and stability appropriately:
+- Stable components (low I) should be abstract (high A) to protect dependents
+- Unstable components (high I) can be concrete (low A) since nothing depends on them
 
-- **D = 0**: Either the interface is clean (A=1) or nothing depends on this component (I=1). No problem.
-- **D > 0**: Some leakage in a component that others depend on. The higher D, the more critical it is to fix.
+- **D = 0**: On the main sequence. Abstraction matches stability.
+- **D = 1**: In a "zone" - either pain (concrete + stable) or uselessness (abstract + unstable).
 
 ---
 
@@ -89,18 +91,13 @@ Unlike the original JDepend metric that counted all namespaces, **poly-metrics o
 
 Components with no other components depending on them get A=1.0 by default (nothing to leak).
 
-### Why the new Distance formula?
+### The Zones
 
-The original JDepend formula `D = |A + I - 1|` penalized unstable components even if they had clean interfaces. But in Polylith:
+**Zone of Pain** (D=1 when A=0, I=0): Concrete and stable. Many depend on this component, but it exposes implementation details. Hard to change safely.
 
-- Entry-level components (high I) naturally have nothing depending on them
-- What matters is **leaky stable components** - implementation details that many depend on
+**Zone of Uselessness** (D=1 when A=1, I=1): Abstract and unstable. Nothing depends on this, but it depends on others. In Polylith, these are often entry-point components used by bases/projects - not truly useless.
 
-The formula `D = (1 - A) * (1 - I)` only produces high distance when **both**:
-- The abstraction is leaky (A < 1)
-- The component is stable (I < 1) - meaning others depend on it
-
-### The Zone of Pain
+### Example: The Zone of Pain
 
 ```
 antq: Ca=3, Ce=2, I=0.40, A=0.00, D=0.60
@@ -113,9 +110,11 @@ This is a problem because:
 
 **The fix**: Route external access through interface namespaces.
 
-### What about bases?
+### What about bases and projects?
 
-Bases are entry points - their consumers are outside the system (CLI, web server, etc.). Since we can't see how they're accessed externally, we exclude them from metrics.
+**Bases** (like CLI runners) are entry points that wire components together. They're included in the dependency graph - if a base uses a component, that component's Ca (afferent coupling) increases. However, bases themselves aren't shown in the metrics table since they're always leaf nodes by design (nothing should depend on a base).
+
+**Projects** are deployment configurations (deps.edn files), not code. They bundle components and bases for delivery but don't participate in the dependency graph.
 
 ---
 
@@ -151,6 +150,67 @@ Bases are entry points - their consumers are outside the system (CLI, web server
 - `0` - Healthy (mean distance < 0.5, no cycles)
 - `1` - Needs attention
 - `2` - Error (not a Polylith workspace, component not found)
+
+---
+
+## Design Decisions
+
+### Why use the standard JDepend Distance formula?
+
+We use `D = |A + I - 1|` rather than alternatives like `D = (1-A) * (1-I)` because:
+
+1. **It's the established standard** - easier to compare with other tools and literature
+2. **The "zone of uselessness" is informative** - components with D=1, A=1, I=1 aren't bugs; they're leaf components. The metric correctly identifies them as unusual, prompting investigation.
+
+### Why are bases included in Ca but not shown in the report?
+
+Early versions showed a "Bases" column listing which bases used each component. We removed it because:
+
+1. **Bases are already in Ca** - the dependency graph includes bases, so a component used by 2 bases already has those counted in its afferent coupling
+2. **Redundant information** - the DEPENDENTS section of component detail already lists bases alongside components
+3. **Simpler report** - fewer columns, same information
+
+### Why no "Projects" column?
+
+We initially added a "Projects" column showing which projects included each component. We removed it because:
+
+1. **Every component is in projects** - in a typical Polylith workspace, all components are bundled into deployment projects, so the column provided no discriminating information
+2. **Projects aren't code dependencies** - they're packaging configurations, not part of the dependency graph
+
+### Why only show components (not bases) in the metrics table?
+
+Bases would always show D=1 (zone of uselessness) because:
+- Nothing depends on a base (Ca=0) → I=1 (fully unstable)
+- No code requires base namespaces externally → A=1 (fully abstract)
+- Therefore D = |1 + 1 - 1| = 1
+
+This is correct but not useful - bases are *designed* to be leaf nodes. Showing them would add noise without insight.
+
+### Why is this tool Polylith-specific?
+
+JDepend works on any Java codebase because Java has explicit constructs the metrics rely on:
+- **Packages** are declared (`package com.foo.bar`)
+- **Abstract types** are declared (`abstract class`, `interface`)
+
+Clojure has neither. This tool works with Polylith because Polylith *creates* these constructs by convention:
+
+1. **Brick boundaries** - Components and bases have explicit directories. We know `user.interface` belongs to the `user` component because it's in `components/user/`.
+
+2. **Interface detection** - Polylith convention puts public API in `interface.clj`. We can distinguish "abstract" (interface namespaces) from "concrete" (implementation namespaces).
+
+**Could this work for regular Clojure?**
+
+Partially. Ca, Ce, Instability, and cycle detection would work - you'd just need to define what a "package" is:
+- Each directory?
+- Each top-level namespace prefix?
+- User-configured groupings?
+
+But **Abstractness becomes meaningless** without a way to distinguish interface from implementation. Options would be:
+- A naming convention (e.g., `*_api.clj` files are interfaces)
+- User configuration specifying which namespaces are interfaces
+- Drop Abstractness entirely and just report Ca/Ce/I/cycles
+
+The core value of this tool is the Abstractness metric - identifying leaky abstractions where other components bypass the interface. Without Polylith's conventions, you'd need to establish your own.
 
 ---
 
