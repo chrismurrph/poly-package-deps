@@ -212,6 +212,17 @@ But **Abstractness becomes meaningless** without a way to distinguish interface 
 
 The core value of this tool is the Abstractness metric - identifying leaky abstractions where other components bypass the interface. Without Polylith's conventions, you'd need to establish your own.
 
+### Future: Support for regular Clojure projects?
+
+Ca, Ce, Instability, and cycle detection are useful even without Abstractness. A future version could support regular Clojure projects by:
+
+1. Detecting project type (Polylith vs regular deps.edn/lein project)
+2. For regular projects, treating each source directory (or namespace prefix) as a "package"
+3. Reporting only Ca/Ce/I/cycles (skipping A and D)
+4. Showing "directory" or "package" in the Type column instead of "component"
+
+This would provide coupling analysis and cycle detection for any Clojure codebase, with the full metrics available only for Polylith workspaces.
+
 ---
 
 ## References
