@@ -8,8 +8,8 @@ JDepend-style maintainability metrics for Polylith Clojure workspaces.
 # Full report for a workspace
 clj -M:run /path/to/polylith-workspace
 
-# Details for a specific component
-clj -M:run /path/to/polylith-workspace component util
+# Details for a specific package
+clj -M:run /path/to/polylith-workspace package util
 
 # Output as JSON
 clj -M:run /path/to/polylith-workspace json
@@ -18,9 +18,40 @@ clj -M:run /path/to/polylith-workspace json
 clj -M:run --help
 ```
 
+## The Quadrant Model
+
+The metrics map each package onto a 2D space:
+
+```
+        A=1 (abstract)
+             │
+   Zone of   │   Ideal
+  Uselessness│  (stable+abstract)
+             │
+I=1 ─────────┼───────── I=0
+(unstable)   │        (stable)
+             │
+    Ideal    │   Zone of
+ (unstable+  │    Pain
+  concrete)  │
+             │
+        A=0 (concrete)
+```
+
+- **X-axis: Instability (I)** — 0 (stable, many depend on you) to 1 (unstable, free to change)
+- **Y-axis: Abstractness (A)** — 0 (concrete, impl exposed) to 1 (abstract, clean interface)
+- **Main sequence**: The diagonal where A + I = 1. Packages on this line are well-balanced.
+- **Distance (D)**: How far from the main sequence. D=0 is ideal.
+
+**Zone of Pain** (bottom-right): Stable but concrete. Many depend on you, but you expose implementation details. Hard to change safely.
+
+**Zone of Uselessness** (top-left): Unstable but abstract. Clean interface, but nothing uses it. Why bother?
+
+---
+
 ## The Five Metrics
 
-When you run `clj -M:run /path/to/workspace component util`, you'll see five metrics:
+When you run `clj -M:run /path/to/workspace package util`, you'll see five metrics:
 
 ### 1. Afferent Coupling (Ca) - "Who uses me?"
 

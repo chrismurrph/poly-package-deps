@@ -1,7 +1,8 @@
 (ns poly-metrics.metrics
-  "JDepend-style metrics calculation for Polylith components."
+  "JDepend-style metrics calculation for Clojure packages."
   (:require [poly-metrics.workspace :as ws]
-            [poly-metrics.graph :as graph]))
+            [poly-metrics.graph :as graph]
+            [poly-metrics.discovery :as discovery]))
 
 (defn instability
   "Calculate instability metric I = Ce / (Ca + Ce).
@@ -68,16 +69,74 @@
     (for [comp components]
       (brick-metrics workspace-root :component comp graph inverted external-requires))))
 
+;; ============================================================
+;; Package-based metrics (bottom-up discovery approach)
+;; ============================================================
+
+(defn package-metrics
+  "Calculate all metrics for a single package.
+   Returns a map with :name, :type, :ca, :ce, :instability, and optionally :abstractness, :distance.
+   For :clojure-package type, A/D are nil (no interface detection)."
+  [root-dir package dep-graph inverted-graph external-requires ns-to-pkg]
+  (let [pkg-name (:name package)
+        pkg-type (:type package)
+        ca (graph/afferent-coupling inverted-graph pkg-name)
+        ce (graph/efferent-coupling dep-graph pkg-name)
+        i (instability ca ce)
+        abs-data (graph/package-abstractness-data root-dir package external-requires ns-to-pkg)]
+    (if abs-data
+      ;; Has interface detection - include A/D
+      (let [a (:abstractness abs-data)
+            d (distance a i)]
+        {:name pkg-name
+         :type pkg-type
+         :ca ca
+         :ce ce
+         :instability i
+         :abstractness a
+         :distance d
+         :abstract-ns (:abstract-ns abs-data)
+         :total-ns (:total-ns abs-data)})
+      ;; No interface detection - skip A/D
+      {:name pkg-name
+       :type pkg-type
+       :ca ca
+       :ce ce
+       :instability i
+       :abstractness nil
+       :distance nil
+       :abstract-ns nil
+       :total-ns nil})))
+
+(defn all-package-metrics
+  "Calculate metrics for all discovered packages.
+   Returns a sequence of metric maps, one per package.
+   Excludes :clojure-package types (plain directories without interface detection)."
+  [root-dir]
+  (let [packages (discovery/discover-packages root-dir)
+        ;; Filter out plain clojure packages - only keep Polylith and Polylith-like
+        relevant-packages (remove #(= :clojure-package (:type %)) packages)
+        dep-graph (graph/build-package-dependency-graph root-dir relevant-packages)
+        inverted (graph/invert-graph dep-graph)
+        external-requires (graph/collect-package-external-requires root-dir relevant-packages)
+        ns-to-pkg (graph/build-ns-to-package-map root-dir relevant-packages)]
+    (for [pkg relevant-packages]
+      (package-metrics root-dir pkg dep-graph inverted external-requires ns-to-pkg))))
+
 (defn codebase-health
   "Calculate overall codebase health metrics.
-   Returns a map with :brick-count, :mean-distance, :max-distance, :min-distance"
+   Returns a map with :package-count, :mean-distance, :max-distance, :min-distance.
+   Only includes packages with distance values (excludes :clojure-package types)."
   [metrics]
-  (let [distances (map :distance metrics)
-        count-bricks (count metrics)]
-    {:brick-count count-bricks
-     :mean-distance (if (zero? count-bricks)
+  (let [;; Filter out packages without distance (clojure-packages)
+        distances (keep :distance metrics)
+        count-with-distance (count distances)
+        count-packages (count metrics)]
+    {:package-count count-packages
+     :packages-with-distance count-with-distance
+     :mean-distance (if (zero? count-with-distance)
                       0.0
-                      (/ (reduce + distances) count-bricks))
+                      (/ (reduce + distances) count-with-distance))
      :max-distance (if (empty? distances) 0.0 (apply max distances))
      :min-distance (if (empty? distances) 0.0 (apply min distances))}))
 

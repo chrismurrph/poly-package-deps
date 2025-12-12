@@ -1,7 +1,10 @@
 (ns poly-metrics.graph
-  "Dependency graph building and analysis for Polylith workspaces."
+  "Dependency graph building and analysis for Clojure packages."
   (:require [poly-metrics.workspace :as ws]
             [poly-metrics.parse :as parse]
+            [poly-metrics.discovery :as discovery]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.tools.namespace.parse :as tns-parse]))
 
 (defn brick-dependencies
@@ -20,6 +23,54 @@
                                         (tns-parse/deps-from-ns-decl ns-decl))))))
                         (into #{}))]
       (ws/resolve-dependencies all-deps ns-to-brick-map top-namespace brick-name))))
+
+;; ============================================================
+;; Package-based dependency graph (bottom-up discovery approach)
+;; ============================================================
+
+(defn package-namespaces
+  "Get all namespaces defined in a package's files.
+   Returns a sequence of namespace symbols."
+  [root-dir package]
+  (->> (:files package)
+       (map #(io/file root-dir %))
+       (keep parse/read-ns-decl)
+       (map second)))
+
+(defn build-ns-to-package-map
+  "Build a map from namespace symbol to package name.
+   Works from discovered packages."
+  [root-dir packages]
+  (into {}
+        (for [pkg packages
+              ns-sym (package-namespaces root-dir pkg)]
+          [ns-sym (:name pkg)])))
+
+(defn package-dependencies
+  "Find packages this package depends on.
+   Returns a set of package names."
+  [root-dir package ns-to-package-map]
+  (let [pkg-name (:name package)
+        all-deps (->> (:files package)
+                      (map #(io/file root-dir %))
+                      (mapcat (fn [f]
+                                (when-let [ns-decl (parse/read-ns-decl f)]
+                                  (tns-parse/deps-from-ns-decl ns-decl))))
+                      (into #{}))]
+    ;; Resolve to package names, excluding self-references and external deps
+    (->> all-deps
+         (keep #(get ns-to-package-map %))
+         (remove #(= % pkg-name))
+         (into #{}))))
+
+(defn build-package-dependency-graph
+  "Build dependency graph from discovered packages.
+   Returns a map of {package-name #{dependent-package-names}}."
+  [root-dir packages]
+  (let [ns-to-pkg (build-ns-to-package-map root-dir packages)]
+    (into {}
+          (for [pkg packages]
+            [(:name pkg) (package-dependencies root-dir pkg ns-to-pkg)]))))
 
 (defn build-dependency-graph
   "Build the complete dependency graph for a Polylith workspace.
@@ -237,3 +288,78 @@
      :abstractness (if (zero? total-ns)
                      1.0  ;; No external access = fully abstract (nothing to leak)
                      (double (/ abstract-ns total-ns)))}))
+
+;; ============================================================
+;; Package-based abstractness calculation
+;; ============================================================
+
+(defn interface-ns-for-package?
+  "Determine if a namespace is an 'interface' for the given package type.
+   - Polylith component/base: namespace contains '.interface'
+   - Polylith-like interface: ALL namespaces are interfaces (the whole package is an interface)
+   - Polylith-like package: namespace contains '.interface' (same as Polylith)
+   - Clojure package: no interface detection (returns false)"
+  [ns-sym package-type]
+  (case package-type
+    :polylith-component (ws/interface-ns? ns-sym)
+    :polylith-base (ws/interface-ns? ns-sym)
+    :polylith-like-interface true  ;; Everything in interfaces/ is abstract
+    :polylith-like-package (ws/interface-ns? ns-sym)
+    :clojure-package false))  ;; No interface detection
+
+(defn collect-package-external-requires
+  "Collect all namespace dependencies across packages.
+   Returns a map of {required-ns #{requiring-package-names}}.
+   Only includes requires that cross package boundaries."
+  [root-dir packages]
+  (let [ns-to-pkg (build-ns-to-package-map root-dir packages)
+
+        collect-for-package (fn [pkg]
+                              (let [pkg-name (:name pkg)]
+                                (->> (:files pkg)
+                                     (map #(io/file root-dir %))
+                                     (mapcat (fn [f]
+                                               (when-let [ns-decl (parse/read-ns-decl f)]
+                                                 (tns-parse/deps-from-ns-decl ns-decl))))
+                                     ;; Keep only known package namespaces
+                                     (filter #(get ns-to-pkg %))
+                                     ;; Tag each with the requiring package
+                                     (map (fn [req-ns] [req-ns pkg-name])))))]
+
+    ;; Collect all requires, only count cross-package dependencies
+    (reduce (fn [acc [req-ns requiring-pkg]]
+              (let [required-pkg (get ns-to-pkg req-ns)]
+                (if (not= required-pkg requiring-pkg)
+                  (update acc req-ns (fnil conj #{}) requiring-pkg)
+                  acc)))
+            {}
+            (mapcat collect-for-package packages))))
+
+(defn package-externally-visible-namespaces
+  "For a package, return the set of its namespaces that are required by other packages."
+  [root-dir package external-requires ns-to-pkg]
+  (let [pkg-name (:name package)]
+    (->> external-requires
+         (filter (fn [[req-ns _]]
+                   (= pkg-name (get ns-to-pkg req-ns))))
+         (map first)
+         (into #{}))))
+
+(defn package-abstractness-data
+  "Calculate abstractness data for a package.
+   For types with interface detection: A = interface-ns / total-ns (externally accessed)
+   For :clojure-package: returns nil (no interface detection)."
+  [root-dir package external-requires ns-to-pkg]
+  (let [pkg-type (:type package)]
+    (if (= pkg-type :clojure-package)
+      ;; No interface detection for plain Clojure packages
+      nil
+      ;; Calculate abstractness for Polylith/Polylith-like types
+      (let [visible-ns (package-externally-visible-namespaces root-dir package external-requires ns-to-pkg)
+            abstract-ns (count (filter #(interface-ns-for-package? % pkg-type) visible-ns))
+            total-ns (count visible-ns)]
+        {:abstract-ns abstract-ns
+         :total-ns total-ns
+         :abstractness (if (zero? total-ns)
+                         1.0  ;; No external access = fully abstract
+                         (double (/ abstract-ns total-ns)))}))))
