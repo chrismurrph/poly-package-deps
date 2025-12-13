@@ -50,6 +50,13 @@
                       (< (inc idx) (count parts)))]
        [marker-type idx]))))
 
+(defn polylith-test-path?
+  "Returns true if path is under a test/ directory within a Polylith brick.
+   For Polylith, we only want src/ code for dependency analysis."
+  [parts marker-idx]
+  (let [after-pkg (drop (+ marker-idx 2) parts)]
+    (some #(= "test" %) after-pkg)))
+
 (defn classify-by-path
   "Classify a file path into package type based on directory patterns.
    Returns {:type :polylith-component|:polylith-base|:polylith-like-interface|:polylith-like-package|:clojure-package
@@ -58,7 +65,9 @@
    Returns nil for paths that should be ignored.
 
    Looks for markers (components/, bases/, interfaces/, packages/) anywhere in path,
-   not just at root. This handles nested Polylith workspaces like examples/doc-example/components/user/."
+   not just at root. This handles nested Polylith workspaces like examples/doc-example/components/user/.
+
+   For Polylith (components/, bases/), excludes test/ files - only src/ is analyzed."
   [relative-path]
   (let [parts (str/split relative-path #"/")
         ;; Remove filename to get directory parts
@@ -71,10 +80,14 @@
       (let [[marker-type marker-idx] marker-match
             pkg-name (nth parts (inc marker-idx))
             ;; src-dir is everything up to and including the package name
-            src-dir (str/join "/" (take (+ marker-idx 2) parts))]
-        {:type marker-type
-         :name pkg-name
-         :src-dir src-dir})
+            src-dir (str/join "/" (take (+ marker-idx 2) parts))
+            ;; For Polylith types, skip test files
+            is-polylith? (#{:polylith-component :polylith-base} marker-type)
+            is-test? (and is-polylith? (polylith-test-path? parts marker-idx))]
+        (when-not is-test?
+          {:type marker-type
+           :name pkg-name
+           :src-dir src-dir}))
 
       ;; Plain Clojure: any other source directory
       ;; Package is the parent directory of the file as a dotted namespace

@@ -73,19 +73,59 @@
 ;; Package-based metrics (bottom-up discovery approach)
 ;; ============================================================
 
+(defn entry-point?
+  "Returns true if this package is an entry point.
+   For Polylith components: Ca=0 from other components, but used by at least one base.
+   For polylith-like packages: Ca=0 (no internal dependents).
+   Entry points are meant to be consumed externally, so A/D metrics are not meaningful."
+  [pkg-type ca base-dependents]
+  (case pkg-type
+    ;; Polylith component: entry point if no component depends on it, but a base does
+    :polylith-component (and (zero? ca) (seq base-dependents))
+    ;; Polylith-like: entry point if nothing depends on it internally
+    :polylith-like-package (zero? ca)
+    ;; Bases are always entry points by definition
+    :polylith-base true
+    ;; Default: not an entry point
+    false))
+
 (defn package-metrics
   "Calculate all metrics for a single package.
    Returns a map with :name, :type, :ca, :ce, :instability, and optionally :abstractness, :distance.
-   For :clojure-package type, A/D are nil (no interface detection)."
-  [root-dir package dep-graph inverted-graph external-requires ns-to-pkg]
+   For :clojure-package type, A/D are nil (no interface detection).
+   For entry points, A/D are nil (no internal dependents to measure against).
+
+   base-dependents: set of base names that depend on this package (for entry-point detection)"
+  [root-dir package dep-graph inverted-graph external-requires ns-to-pkg base-names]
   (let [pkg-name (:name package)
         pkg-type (:type package)
-        ca (graph/afferent-coupling inverted-graph pkg-name)
+        ;; Internal dependents = all dependents minus bases
+        internal-deps (graph/internal-dependents inverted-graph pkg-name base-names)
+        ;; Base dependents needed for entry-point detection in Polylith
+        all-dependents (graph/direct-dependents inverted-graph pkg-name)
+        base-dependents (clojure.set/intersection all-dependents base-names)
+        ;; Ca counts only internal dependents
+        ca (count internal-deps)
         ce (graph/efferent-coupling dep-graph pkg-name)
         i (instability ca ce)
-        abs-data (graph/package-abstractness-data root-dir package external-requires ns-to-pkg)]
-    (if abs-data
+        abs-data (graph/package-abstractness-data root-dir package external-requires ns-to-pkg)
+        is-entry-point? (entry-point? pkg-type ca base-dependents)]
+    (cond
+      ;; Entry point - A/D not meaningful
+      is-entry-point?
+      {:name pkg-name
+       :type pkg-type
+       :ca ca
+       :ce ce
+       :instability i
+       :abstractness nil
+       :distance nil
+       :abstract-ns nil
+       :total-ns nil
+       :entry-point? true}
+
       ;; Has interface detection - include A/D
+      abs-data
       (let [a (:abstractness abs-data)
             d (distance a i)]
         {:name pkg-name
@@ -96,8 +136,11 @@
          :abstractness a
          :distance d
          :abstract-ns (:abstract-ns abs-data)
-         :total-ns (:total-ns abs-data)})
+         :total-ns (:total-ns abs-data)
+         :entry-point? false})
+
       ;; No interface detection - skip A/D
+      :else
       {:name pkg-name
        :type pkg-type
        :ca ca
@@ -106,22 +149,36 @@
        :abstractness nil
        :distance nil
        :abstract-ns nil
-       :total-ns nil})))
+       :total-ns nil
+       :entry-point? false})))
 
 (defn all-package-metrics
   "Calculate metrics for all discovered packages.
    Returns a sequence of metric maps, one per package.
-   Excludes :clojure-package types (plain directories without interface detection)."
+
+   Uses ALL packages (including Clojure directories) for dependency graph,
+   so Ca/Ce/I/A metrics reflect the full dependency landscape.
+   But only reports on polylith/polylith-like packages.
+
+   Clojure directories accessing a package count as implementation access
+   for abstractness calculation (they are implementation by definition)."
   [root-dir]
-  (let [packages (discovery/discover-packages root-dir)
-        ;; Filter out plain clojure packages - only keep Polylith and Polylith-like
-        relevant-packages (remove #(= :clojure-package (:type %)) packages)
-        dep-graph (graph/build-package-dependency-graph root-dir relevant-packages)
+  (let [all-packages (discovery/discover-packages root-dir)
+        ;; Use all packages (except interfaces) for the dependency graph
+        graph-packages (remove #(= :polylith-like-interface (:type %)) all-packages)
+        ;; Only report on polylith components and polylith-like packages (not bases, interfaces, or clojure-packages)
+        reportable-packages (remove #(#{:clojure-package :polylith-like-interface :polylith-base} (:type %)) all-packages)
+        ;; Identify base names for entry-point detection
+        base-names (->> all-packages
+                        (filter #(= :polylith-base (:type %)))
+                        (map :name)
+                        (into #{}))
+        dep-graph (graph/build-package-dependency-graph root-dir graph-packages)
         inverted (graph/invert-graph dep-graph)
-        external-requires (graph/collect-package-external-requires root-dir relevant-packages)
-        ns-to-pkg (graph/build-ns-to-package-map root-dir relevant-packages)]
-    (for [pkg relevant-packages]
-      (package-metrics root-dir pkg dep-graph inverted external-requires ns-to-pkg))))
+        external-requires (graph/collect-package-external-requires root-dir graph-packages)
+        ns-to-pkg (graph/build-ns-to-package-map root-dir graph-packages)]
+    (for [pkg reportable-packages]
+      (package-metrics root-dir pkg dep-graph inverted external-requires ns-to-pkg base-names))))
 
 (defn codebase-health
   "Calculate overall codebase health metrics.

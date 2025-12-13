@@ -31,7 +31,7 @@
     :distance 0.0}])
 
 (def sample-health
-  {:brick-count 3
+  {:package-count 3
    :mean-distance 0.27
    :max-distance 0.8
    :min-distance 0.0})
@@ -60,7 +60,7 @@
 (deftest metrics-table-header-test
   (testing "header contains column names"
     (let [header (report/metrics-table-header)]
-      (is (str/includes? header "Brick"))
+      (is (str/includes? header "Package"))
       (is (str/includes? header "Type"))
       (is (str/includes? header "Ca"))
       (is (str/includes? header "Ce"))
@@ -93,7 +93,7 @@
       (is (not (:healthy? report)))))
 
   (testing "healthy? is false with high mean distance"
-    (let [bad-health {:brick-count 1 :mean-distance 0.7 :max-distance 0.7 :min-distance 0.7}
+    (let [bad-health {:package-count 1 :mean-distance 0.7 :max-distance 0.7 :min-distance 0.7}
           report (report/edn-report sample-metrics bad-health [])]
       (is (not (:healthy? report))))))
 
@@ -129,7 +129,7 @@
 (deftest print-report-test
   (testing "text output contains all sections"
     (let [output (with-out-str (report/print-report sample-metrics sample-health []))]
-      (is (str/includes? output "Brick"))
+      (is (str/includes? output "Package"))
       (is (str/includes? output "util"))
       (is (str/includes? output "Summary"))
       (is (str/includes? output "Mean distance"))
@@ -146,7 +146,7 @@
   (testing "generates text report for polylith"
     (let [text-report (report/generate-report polylith-root :format :text)]
       (is (string? text-report))
-      (is (str/includes? text-report "Brick"))
+      (is (str/includes? text-report "Package"))
       (is (str/includes? text-report "util"))))
 
   (testing "generates EDN report for polylith"

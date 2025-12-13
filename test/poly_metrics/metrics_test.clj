@@ -77,14 +77,14 @@
                    {:distance 0.4}
                    {:distance 0.6}]
           health (metrics/codebase-health metrics)]
-      (is (= 3 (:brick-count health)))
+      (is (= 3 (:package-count health)))
       (is (approx= 0.4 (:mean-distance health)))
       (is (approx= 0.6 (:max-distance health)))
       (is (approx= 0.2 (:min-distance health)))))
 
   (testing "handles empty metrics"
     (let [health (metrics/codebase-health [])]
-      (is (= 0 (:brick-count health)))
+      (is (= 0 (:package-count health)))
       (is (= 0.0 (:mean-distance health)))
       (is (= 0.0 (:max-distance health)))
       (is (= 0.0 (:min-distance health))))))

@@ -38,8 +38,9 @@
   [root-dir package-name]
   (let [all-metrics (metrics/all-package-metrics root-dir)
         packages (discovery/discover-packages root-dir)
-        relevant-packages (remove #(= :clojure-package (:type %)) packages)
-        dep-graph (graph/build-package-dependency-graph root-dir relevant-packages)
+        ;; Use all packages except interfaces for graph
+        graph-packages (remove #(= :polylith-like-interface (:type %)) packages)
+        dep-graph (graph/build-package-dependency-graph root-dir graph-packages)
         inverted (graph/invert-graph dep-graph)
         m (first (filter #(= package-name (:name %)) all-metrics))]
     (if m
@@ -93,16 +94,22 @@
 
       ;; Discover packages and generate report
       (let [packages (discovery/discover-packages root-dir)
-            relevant-packages (remove #(= :clojure-package (:type %)) packages)
-            _ (when (empty? relevant-packages)
+            ;; Use all packages except interfaces for graph (includes clojure-packages)
+            graph-packages (remove #(= :polylith-like-interface (:type %)) packages)
+            ;; Only report on polylith components and polylith-like packages (not bases, interfaces, or clojure-packages)
+            reportable-packages (remove #(#{:clojure-package :polylith-like-interface :polylith-base} (:type %)) packages)
+            _ (when (empty? reportable-packages)
                 (binding [*out* *err*]
                   (println "Error: No Polylith or Polylith-like packages found")
                   (println "Path:" (.getAbsolutePath (io/file root-dir))))
                 (System/exit 2))
             all-metrics (metrics/all-package-metrics root-dir)
             health (metrics/codebase-health all-metrics)
-            dep-graph (graph/build-package-dependency-graph root-dir relevant-packages)
-            cycles (graph/find-all-cycles dep-graph)
+            dep-graph (graph/build-package-dependency-graph root-dir graph-packages)
+            ;; Only report cycles among reportable packages
+            reportable-names (set (map :name reportable-packages))
+            all-cycles (graph/find-all-cycles dep-graph)
+            cycles (filter #(every? reportable-names %) all-cycles)
             healthy? (and (< (:mean-distance health) 0.5)
                           (zero? (count cycles)))]
 

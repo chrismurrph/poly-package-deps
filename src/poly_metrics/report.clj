@@ -32,9 +32,11 @@
     :polylith-component "component"
     :polylith-base "base"
     :polylith-like-interface "interface"
-    :polylith-like-package "package"
+    :polylith-like-package "polylith-like"
     :clojure-package "directory"
     (name pkg-type)))
+
+(def ^:private col-type 12)
 
 (defn metrics-table-row
   "Format a single package's metrics as a table row."
@@ -42,7 +44,7 @@
   (let [;; Support both old (:brick-name/:brick-type) and new (:name/:type) field names
         pkg-name (or (:name m) (:brick-name m))
         pkg-type (or (:type m) (:brick-type m))]
-    (format (str "%-" col-pkg "s %-10s %3d %3d %5s %5s %5s")
+    (format (str "%-" col-pkg "s %-" col-type "s %3d %3d %5s %5s %5s")
             pkg-name
             (type-display-name pkg-type)
             (:ca m)
@@ -54,8 +56,8 @@
 (defn metrics-table-header
   "Return the table header string."
   []
-  (let [total-width (+ col-pkg 10 4 4 6 6 6)]
-    (str (format (str "%-" col-pkg "s %-10s %3s %3s %5s %5s %5s")
+  (let [total-width (+ col-pkg col-type 4 4 6 6 6)]
+    (str (format (str "%-" col-pkg "s %-" col-type "s %3s %3s %5s %5s %5s")
                  "Package" "Type" "Ca" "Ce" "I" "A" "D")
          "\n"
          (apply str (repeat total-width "-")))))
@@ -65,26 +67,41 @@
    Packages with nil distance are sorted to the end."
   [metrics]
   (println (metrics-table-header))
-  ;; Sort: non-nil distances descending, then nil distances at end (by name)
+  ;; Sort: non-nil distances first, then by D desc, I desc, Ca asc, Ce desc, name asc
   (let [sorted (sort-by (fn [m]
-                          [(if (:distance m) 0 1)  ; non-nil first
-                           (- (or (:distance m) 0))  ; by distance desc
-                           (or (:name m) (:brick-name m))])  ; then by name
+                          [(if (:distance m) 0 1)           ; non-nil first
+                           (- (or (:distance m) 0))         ; D descending
+                           (- (:instability m))             ; I descending
+                           (:ca m)                          ; Ca ascending
+                           (- (:ce m))                      ; Ce descending
+                           (or (:name m) (:brick-name m))]) ; name ascending
                         metrics)]
     (doseq [m sorted]
       (println (metrics-table-row m)))))
 
 (defn print-health-summary
   "Print codebase health summary."
-  [health]
+  [health metrics]
   (println)
   (println "Summary:")
   ;; Support both old (:brick-count) and new (:package-count) field names
   (let [pkg-count (or (:package-count health) (:brick-count health))
-        with-distance (:packages-with-distance health)]
+        with-distance (:packages-with-distance health)
+        entry-points (- pkg-count (or with-distance pkg-count))
+        ;; Polylith workspaces have components (and bases, though bases aren't in metrics)
+        is-polylith? (some #(= :polylith-component (:type %)) metrics)]
     (printf "  Package count:  %d%n" pkg-count)
     (when (and with-distance (not= with-distance pkg-count))
-      (printf "  With metrics:   %d (others are plain Clojure packages)%n" with-distance))
+      (printf "  Entry points:   %d%n" entry-points)
+      (if is-polylith?
+        (do
+          (println "                  (excluded from distance calculation b/c these are consumed by")
+          (println "                  bases rather than other packages - abstractness is not")
+          (println "                  meaningful when there are no internal dependents to protect)"))
+        (do
+          (println "                  (excluded from distance calculation b/c these packages have no")
+          (println "                  internal dependents - abstractness is not meaningful when there")
+          (println "                  are no internal dependents to protect)"))))
     (printf "  Mean distance:  %s%n" (format-metric (:mean-distance health) 3))
     (printf "  Max distance:   %s%n" (format-metric (:max-distance health) 3))
     (printf "  Min distance:   %s%n" (format-metric (:min-distance health) 3))))
@@ -102,7 +119,7 @@
   "Print a complete text report."
   [metrics health cycles]
   (print-metrics-table metrics)
-  (print-health-summary health)
+  (print-health-summary health metrics)
   (print-cycles cycles)
   (println)
   (if (and (< (:mean-distance health) 0.5)
@@ -191,99 +208,99 @@
       :edn (edn-report all-metrics health cycles)
       :json (json-report all-metrics health cycles))))
 
-;; Component detail explanations
+;; Package detail explanations
 
 (defn describe-instability
   "Explain instability in plain English."
   [i ce ca]
   (cond
     (zero? (+ ca ce))
-    "This component is isolated - nothing depends on it and it depends on nothing. Instability defaults to 0."
+    "This package is isolated - nothing depends on it and it depends on nothing. Instability defaults to 0."
 
     (< i 0.2)
     (str (format "Very stable (I=%.2f). " i)
-         (format "%d component(s) depend on this, but it only depends on %d. " ca ce)
+         (format "%d package(s) depend on this, but it only depends on %d. " ca ce)
          "You NEED to be stable because many depend on you. "
          "This is GOOD if you have a clean interface (high A) - dependents are protected from your internals. "
          "This is BAD if you expose implementation details (low A) - changes could break many dependents.")
 
     (<= i 0.4)
     (str (format "Mostly stable (I=%.2f). " i)
-         (format "More components depend on this (%d) than it depends on (%d). " ca ce)
+         (format "More packages depend on this (%d) than it depends on (%d). " ca ce)
          "You need to be somewhat careful about changes. "
-         "Check the Abstractness metric - stable components should have clean interfaces.")
+         "Check the Abstractness metric - stable packages should have clean interfaces.")
 
     (<= i 0.6)
     (str (format "Balanced (I=%.2f). " i)
          (format "Similar number of dependents (%d) and dependencies (%d). " ca ce)
-         "Middle-tier component with moderate change risk in both directions.")
+         "Middle-tier package with moderate change risk in both directions.")
 
     (<= i 0.8)
     (str (format "Mostly unstable (I=%.2f). " i)
-         (format "Depends on %d component(s) but only %d depend on it. " ce ca)
+         (format "Depends on %d package(s) but only %d depend on it. " ce ca)
          "You're fairly free to change since few depend on you. "
          "GOOD: Low-risk place for implementation details.")
 
     :else
     (str (format "Very unstable (I=%.2f). " i)
-         (format "Depends on %d component(s) but only %d depend on it. " ce ca)
+         (format "Depends on %d package(s) but only %d depend on it. " ce ca)
          "You're free to change - this is an entry-point with no downstream dependents. "
          "GOOD: The ideal place for concrete implementation details. "
-         "Note: You're affected by upstream changes, but you don't affect other components.")))
+         "Note: You're affected by upstream changes, but you don't affect other packages.")))
 
 (defn describe-abstractness
   "Explain abstractness in plain English.
-   interface-count: number of interface namespaces accessed by other components
-   total-count: total namespaces in this component accessed by other components
-   (total - interface = implementation ns that are 'leaked' to other components)"
+   interface-count: number of interface namespaces accessed by other packages
+   total-count: total namespaces in this package accessed by other packages
+   (total - interface = implementation ns that are 'leaked' to other packages)"
   [a interface-count total-count]
   (let [impl-count (- total-count interface-count)]
     (cond
       (zero? total-count)
-      (str "No external access (A=1.00 by default). "
-           "No other components require any namespaces from this component. "
+      (str "No access by other packages (A=1.00 by default). "
+           "No other packages require any namespaces from this package. "
            "This means either: (1) it's an entry-point used only by bases/projects, or (2) it's unused. "
            "GOOD: Nothing to leak means no abstraction problems. "
            "Check the Dependents section above to see if anything uses this.")
 
       (and (= a 1.0) (pos? interface-count))
       (str (format "Perfect abstraction (A=%.2f). " a)
-           (format "All %d externally-accessed namespace(s) are interface namespaces. " interface-count)
-           "GOOD: Other components access this through its public API only. "
+           (format "All %d namespace(s) accessed by other packages are interface namespaces. " interface-count)
+           "GOOD: Other packages access this through its public API only. "
            "The implementation is fully encapsulated - you can refactor internals freely.")
 
       (> a 0.8)
       (str (format "Highly abstract (A=%.2f). " a)
-           (format "%d of %d externally-accessed namespaces are interfaces (%d implementation). " interface-count total-count impl-count)
+           (format "%d of %d namespaces accessed by other packages are interfaces (%d implementation). " interface-count total-count impl-count)
            "GOOD: Most access goes through the interface. "
-           (format "Minor issue: %d implementation namespace(s) are required directly by other components. " impl-count)
+           (format "Minor issue: %d implementation namespace(s) are required directly by other packages. " impl-count)
            "Consider routing that access through interface functions instead.")
 
       (> a 0.5)
       (str (format "Moderately abstract (A=%.2f). " a)
-           (format "%d interface, %d implementation namespace(s) accessed externally. " interface-count impl-count)
-           "MIXED: Some external access bypasses the interface. "
-           "If this component is stable (low I), this is a concern - other components are coupled to your internals.")
+           (format "%d interface, %d implementation namespace(s) accessed by other packages. " interface-count impl-count)
+           "MIXED: Some access by other packages bypasses the interface. "
+           "If this package is stable (low I), this is a concern - other packages are coupled to your internals.")
 
       (> a 0.0)
       (str (format "Mostly concrete (A=%.2f). " a)
-           (format "Only %d interface namespace(s), but %d implementation namespace(s) accessed externally. " interface-count impl-count)
-           "BAD if stable: This is a leaky abstraction. Other components require your implementation namespaces directly. "
-           "They're coupled to your internals, making this component hard to refactor safely. "
+           (format "Only %d interface namespace(s), but %d implementation namespace(s) accessed by other packages. " interface-count impl-count)
+           "BAD if stable: This is a leaky abstraction. Other packages require your implementation namespaces directly. "
+           "They're coupled to your internals, making this package hard to refactor safely. "
            "FIX: Add functions to the interface that wrap the implementation, then update callers.")
 
       :else
       (str (format "No abstraction (A=%.2f). " a)
-           (format "All %d externally-accessed namespace(s) are implementation, not interface. " impl-count)
-           "BAD if stable: Complete abstraction leak. Other components bypass the interface entirely. "
+           (format "All %d namespace(s) accessed by other packages are implementation, not interface. " impl-count)
+           "BAD if stable: Complete abstraction leak. Other packages bypass the interface entirely. "
            "This tightly couples dependents to implementation details. "
            "FIX: Create or expand the interface namespace, expose needed functions there, update callers."))))
 
 (defn describe-distance
   "Explain distance from main sequence in plain English.
    The main sequence is the line A + I = 1. Distance measures deviation from it.
-   - Stable components (low I) should be abstract (high A) to protect dependents
-   - Unstable components (high I) can be concrete (low A) since nothing depends on them"
+   - Stable packages (low I) should be abstract (high A) to protect dependents
+   - Unstable packages (high I) can be concrete (low A) since nothing depends on them"
   [d a i ca]
   (let [stable? (<= i 0.4)       ; stable if 40% or less of coupling is outgoing
         unstable? (> i 0.7)      ; clearly unstable
@@ -292,17 +309,31 @@
         concrete? (< a 0.3)      ; leaky
         has-dependents? (pos? ca)]
     (cond
-      ;; Perfect or near-perfect: on the main sequence
-      (< d 0.1)
+      ;; Perfect: exactly on the main sequence
+      (< d 0.02)
       (str (format "Excellent (D=%.2f). " d)
-           "This component is on the 'main sequence' - the ideal balance of abstraction and stability. "
+           "This package is on the 'main sequence' - the ideal balance of abstraction and stability. "
            (cond
              (and stable? abstract?)
-             "It's stable AND abstract: a well-encapsulated component that others can safely depend on."
+             "It's stable AND abstract: a well-encapsulated package that others can safely depend on."
              (and unstable? concrete?)
              "It's unstable AND concrete: implementation details where they belong (near the entry-points)."
              abstract?
-             "Clean interface - all external access goes through the API."
+             "Clean interface - all access by other packages goes through the API."
+             :else
+             "Good balance between abstraction and stability."))
+
+      ;; Near-perfect: close to the main sequence
+      (< d 0.15)
+      (str (format "Excellent (D=%.2f). " d)
+           "Close to the 'main sequence'. "
+           (cond
+             (and stable? abstract?)
+             "It's stable AND abstract: a well-encapsulated package that others can safely depend on."
+             (and unstable? concrete?)
+             "It's unstable AND concrete: implementation details where they belong (near the entry-points)."
+             abstract?
+             "Clean interface - all access by other packages goes through the API."
              :else
              "Good balance between abstraction and stability."))
 
@@ -311,45 +342,45 @@
            "Close to the main sequence. "
            (cond
              abstract? "Clean interface with all access through the API."
-             stable? "This stable component has reasonable abstraction."
+             stable? "This stable package has reasonable abstraction."
              :else "Acceptable balance of abstraction and stability."))
 
       ;; Zone of pain: stable + concrete (low I, low A) with dependents
       (and stable? concrete? has-dependents?)
       (str (format "Zone of Pain (D=%.2f). " d)
-           "This component is STABLE (many depend on it) but CONCRETE (implementation exposed). "
+           "This package is STABLE (many depend on it) but CONCRETE (implementation exposed). "
            "BAD: This is the worst combination. Changes to implementation details risk breaking dependents. "
-           "The component is rigid and hard to evolve safely. "
-           "FIX: Route external access through interface namespaces to decouple dependents from internals.")
+           "The package is rigid and hard to evolve safely. "
+           "FIX: Route access through interface namespaces to decouple dependents from internals.")
 
       ;; Stable but leaky (not quite zone of pain, but still concerning)
       (and stable? (not abstract?) has-dependents?)
       (str (format "Leaky abstraction (D=%.2f). " d)
            (format "Stable (I=%.2f) but low abstraction (A=%.2f). " i a)
-           "Some external access bypasses the interface. "
+           "Some access by other packages bypasses the interface. "
            "CONCERN: Dependents may be coupled to your internals - refactoring could be risky. "
            "FIX: Route more access through interface functions.")
 
       ;; Zone of uselessness: truly unstable + abstract (high I, high A, few dependents)
       (and unstable? abstract? (< ca 2))
       (str (format "Zone of Uselessness (D=%.2f). " d)
-           "This component is UNSTABLE (few depend on it) but ABSTRACT (clean interface). "
+           "This package is UNSTABLE (few depend on it) but ABSTRACT (clean interface). "
            "UNUSUAL: Why have a clean interface if nothing uses it? "
-           "In Polylith this often means the component is used by bases/projects (not other components). "
+           "This often means the package is used by bases/projects (not other packages). "
            "This may be fine - check if it's an entry-point wiring things together.")
 
       ;; Abstract with some dependents - this is actually fine
       (and abstract? has-dependents?)
       (str (format "Good (D=%.2f). " d)
-           "Clean interface - all external access goes through the API. "
+           "Clean interface - all access by other packages goes through the API. "
            (if balanced?
-             "Middle-tier component with good encapsulation."
-             "Well-encapsulated component."))
+             "Middle-tier package with good encapsulation."
+             "Well-encapsulated package."))
 
       ;; Balanced instability with good abstraction
       (and balanced? (>= a 0.5))
       (str (format "Fair (D=%.2f). " d)
-           "Middle-tier component. "
+           "Middle-tier package. "
            "Abstraction is reasonable - most access goes through the interface.")
 
       (< d 0.5)
@@ -358,7 +389,7 @@
            (cond
              stable? "Consider improving abstraction - route more access through interface namespaces."
              abstract? "Good encapsulation despite the distance score."
-             :else "This is acceptable for a component at this stability level."))
+             :else "This is acceptable for a package at this stability level."))
 
       ;; High distance, various causes
       :else
@@ -368,12 +399,12 @@
              (and stable? (not abstract?))
              "PROBLEM: Stable but concrete. Dependents are coupled to implementation details. Fix abstraction."
              (and unstable? abstract? (zero? ca))
-             "UNUSUAL: Unstable and abstract with no dependents. Check if this component is actually needed."
+             "UNUSUAL: Unstable and abstract with no dependents. Check if this package is actually needed."
              :else
              "Review the Abstractness and Instability metrics to understand why.")))))
 
 (defn describe-overall-health
-  "Give an overall assessment of the component."
+  "Give an overall assessment of the package."
   [m]
   (let [d (:distance m)
         a (:abstractness m)
@@ -383,98 +414,148 @@
         interface-ns (or (:abstract-ns m) 0)
         total-ns (or (:total-ns m) 0)
         impl-ns (- total-ns interface-ns)
-        no-external-access? (zero? total-ns)
+        no-access-from-other-components? (zero? total-ns)
         clean-interface? (and (pos? interface-ns) (zero? impl-ns))
         leaky? (pos? impl-ns)
         stable? (< i 0.5)
         has-dependents? (pos? ca)]
     (cond
-      ;; No external access from other components
-      no-external-access?
+      ;; No access from other packages
+      no-access-from-other-components?
       (cond
         (zero? ca)
-        (str "ENTRY-POINT: No other components depend on this or require its namespaces. "
+        (str "ENTRY-POINT: No other packages depend on this or require its namespaces. "
              "It's likely used only by bases/projects. "
              "This is fine - entry-points don't need abstraction.")
 
         (pos? ca)
-        (str "UNUSUAL: " ca " component(s) list this as a dependency, but none require its namespaces directly. "
+        (str "UNUSUAL: " ca " package(s) list this as a dependency, but none require its namespaces directly. "
              "Check if the dependencies are actually used, or if access happens through re-exports."))
 
       ;; Perfect abstraction with dependents
       (and clean-interface? has-dependents?)
-      (str "HEALTHY: All external access goes through the interface. "
-           interface-ns " interface namespace(s) are used by other components. "
+      (str "HEALTHY: All access by other packages goes through the interface. "
+           interface-ns " interface namespace(s) are used by other packages. "
            "Implementation is fully encapsulated - safe to refactor internals.")
 
       ;; Perfect abstraction, no dependents
       clean-interface?
-      (str "HEALTHY: Clean interface, though no other components depend on this. "
-           "If this is intentional (entry-point component), that's fine.")
+      (str "HEALTHY: Clean interface, though no other packages depend on this. "
+           "If this is intentional (entry-point package), that's fine.")
 
       ;; Zone of pain: stable + leaky
       (and stable? leaky? has-dependents?)
-      (str "PROBLEM: Leaky abstraction in a stable component. "
-           impl-ns " implementation namespace(s) are required directly by other components. "
-           "Since " ca " component(s) depend on this, changes to those internals are risky. "
+      (str "PROBLEM: Leaky abstraction in a stable package. "
+           impl-ns " implementation namespace(s) are required directly by other packages. "
+           "Since " ca " package(s) depend on this, changes to those internals are risky. "
            "FIX: Expose needed functionality through interface namespaces, then update callers.")
 
       ;; Leaky but less critical (unstable)
       (and leaky? (not stable?))
-      (str "MINOR ISSUE: " impl-ns " implementation namespace(s) are required externally. "
-           "Since this component is unstable (few depend on it), this is less critical. "
+      (str "MINOR ISSUE: " impl-ns " implementation namespace(s) are required by other packages. "
+           "Since this package is unstable (few depend on it), this is less critical. "
            "Still, consider routing access through the interface for cleaner architecture.")
 
       ;; Leaky, somewhat stable
       leaky?
-      (str "ISSUE: " impl-ns " implementation namespace(s) are required by other components. "
+      (str "ISSUE: " impl-ns " implementation namespace(s) are required by other packages. "
            "This couples dependents to your internals. "
            "Consider exposing needed functions through the interface.")
 
       :else
-      "HEALTHY: This component has reasonable metrics.")))
+      "HEALTHY: This package has reasonable metrics.")))
+
+;; ============================================================
+;; Quadrant diagram rendering (layered approach)
+;; ============================================================
+
+(def ^:private diagram-rows 11)
+(def ^:private diagram-cols 23)
+(def ^:private center-row 5)
+(def ^:private center-col 11)
+
+(defn- make-grid
+  "Layer 1: Create base grid with axes.
+   Returns a vector of strings, each of diagram-cols length.
+   Vertical bar at center-col, horizontal bar at center-row."
+  []
+  (vec
+   (for [row (range diagram-rows)]
+     (apply str
+            (for [col (range diagram-cols)]
+              (cond
+                (and (= row center-row) (= col center-col)) \┼
+                (= row center-row) \─
+                (= col center-col) \│
+                :else \space))))))
+
+(defn- overlay-char
+  "Overlay a single character at position, returning updated grid."
+  [grid row col ch]
+  (if (and (>= row 0) (< row (count grid))
+           (>= col 0) (< col (count (first grid))))
+    (let [line (nth grid row)
+          new-line (str (subs line 0 col) ch (subs line (inc col)))]
+      (assoc grid row new-line))
+    grid))
+
+(defn- overlay-text
+  "Layer 3: Overlay text at position, overwriting existing chars."
+  [grid row col text]
+  (reduce-kv
+   (fn [g idx ch]
+     (overlay-char g row (+ col idx) ch))
+   grid
+   (vec text)))
+
+(defn- draw-diagonal
+  "Layer 2: Draw main sequence diagonal from bottom-left to top-right.
+   The diagonal passes through center, overwriting the ┼."
+  [grid]
+  (reduce
+   (fn [g row]
+     ;; Diagonal: at center-row, col = center-col
+     ;; Each row up, col increases by 2; each row down, col decreases by 2
+     (let [col (+ center-col (* 2 (- center-row row)))]
+       (overlay-char g row col \/)))
+   grid
+   (range diagram-rows)))
+
+(defn- position-to-grid
+  "Convert I/A values to grid row/col positions.
+   I=1 -> col 1, I=0 -> col 21 (diagram-cols - 2)
+   A=1 -> row 1, A=0 -> row 9 (diagram-rows - 2)"
+  [instability abstractness]
+  (let [i-left 1
+        i-right (- diagram-cols 2)
+        a-top 1
+        a-bottom (- diagram-rows 2)
+        col (int (Math/round (+ i-left (* (- i-right i-left) (- 1.0 instability)))))
+        row (int (Math/round (+ a-top (* (- a-bottom a-top) (- 1.0 abstractness)))))]
+    [row col]))
 
 (defn render-quadrant-diagram
   "Render the A/I quadrant diagram with a marker showing the package's position.
    I (instability) is x-axis: 1 on left, 0 on right
    A (abstractness) is y-axis: 1 on top, 0 on bottom"
   [instability abstractness]
-  (let [;; Map I to column: I=1 -> col 0, I=0.5 -> col 1, I=0 -> col 2
-        i-col (cond (> instability 0.5) 0   ; unstable (left)
-                    (< instability 0.5) 2   ; stable (right)
-                    :else 1)                ; middle
-        ;; Map A to row: A=1 -> row 0, A=0.5 -> row 1, A=0 -> row 2
-        a-row (cond (> abstractness 0.5) 0  ; abstract (top)
-                    (< abstractness 0.5) 2  ; concrete (bottom)
-                    :else 1)                ; middle
-        ;; Grid positions for marker: [row col] -> [line-index char-position]
-        marker-positions {[0 0] [3 4]   ; top-left (uselessness)
-                          [0 1] [3 13]  ; top-middle
-                          [0 2] [3 18]  ; top-right (ideal stable+abstract)
-                          [1 0] [5 4]   ; middle-left
-                          [1 1] [5 13]  ; center
-                          [1 2] [5 18]  ; middle-right
-                          [2 0] [7 4]   ; bottom-left (ideal unstable+concrete)
-                          [2 1] [7 13]  ; bottom-middle
-                          [2 2] [9 18]} ; bottom-right (pain)
-        [marker-row marker-col] (get marker-positions [a-row i-col] [5 13])
-        lines ["        A=1 (abstract)    "
-               "             │            "
-               "   Zone of   │   Ideal    "
-               "  Uselessness│            "
-               "             │            "
-               "I=1 ─────────┼───────── I=0"
-               "             │            "
-               "    Ideal    │   Zone of  "
-               "             │    Pain    "
-               "             │            "
-               "        A=0 (concrete)    "]]
+  (let [[marker-row marker-col] (position-to-grid instability abstractness)
+        grid (-> (make-grid)
+                 (overlay-text 0 6 "A=1")
+                 (overlay-text (dec diagram-rows) 6 "A=0")
+                 (overlay-text center-row 0 "I=1")
+                 (overlay-text center-row (- diagram-cols 3) "I=0")
+                 (overlay-text 2 0 "Zone of")
+                 (overlay-text 3 0 "Uselessness")
+                 (overlay-text 3 16 "Ideal")
+                 (overlay-text 7 1 "Ideal")
+                 (overlay-text 7 15 "Zone of")
+                 (overlay-text 8 16 "Pain")
+                 (overlay-char marker-row marker-col \*))]
     (println)
     (println "POSITION")
-    (doseq [[idx line] (map-indexed vector lines)]
-      (if (= idx marker-row)
-        (println (str (subs line 0 marker-col) "*" (subs line (inc marker-col))))
-        (println line)))
+    (doseq [line grid]
+      (println line))
     (println)))
 
 (defn print-component-detail
@@ -487,7 +568,9 @@
         interface-ns (or (:abstract-ns m) 0)
         total-ns (or (:total-ns m) 0)
         impl-ns (- total-ns interface-ns)
-        has-abstractness? (some? (:abstractness m))]
+        has-abstractness? (some? (:abstractness m))
+        is-entry-point? (:entry-point? m)
+        is-clojure-package? (= pkg-type :clojure-package)]
 
     (println (str "Package: " pkg-name))
     (println (str "Type: " (type-display-name pkg-type)))
@@ -540,10 +623,12 @@
     (println)
 
     ;; Abstractness (only for packages with interface detection)
-    (if has-abstractness?
+    (cond
+      ;; Has abstractness - show full A/D metrics
+      has-abstractness?
       (do
-        (println (format "Abstractness (A): %.2f  [Formula: interface-ns / total-ns externally accessed]" (:abstractness m)))
-        (println (format "  External access breakdown: %d interface ns, %d implementation ns" interface-ns impl-ns))
+        (println (format "Abstractness (A): %.2f  [Formula: interface-ns / total-ns accessed by other packages]" (:abstractness m)))
+        (println (format "  Access by other packages: %d interface ns, %d implementation ns" interface-ns impl-ns))
         (println)
         (println (str "  " (describe-abstractness (:abstractness m) interface-ns total-ns)))
         (println)
@@ -561,7 +646,22 @@
         (println "ASSESSMENT")
         (println (describe-overall-health m)))
 
-      ;; No interface detection for this package type
+      ;; Entry point - A/D not applicable
+      is-entry-point?
+      (do
+        (println "Abstractness (A): -")
+        (println "  Not applicable for entry points - no internal dependents to measure against.")
+        (println)
+        (println "Distance (D): -")
+        (println "  Not applicable for entry points.")
+        (println)
+        (println "ASSESSMENT")
+        (println (str "This is an entry point with no internal dependents. "
+                      "Abstractness metrics are not meaningful here because there are no other "
+                      "packages that could bypass the interface.")))
+
+      ;; Plain Clojure package - no interface detection
+      is-clojure-package?
       (do
         (println "Abstractness (A): -")
         (println "  This package type has no interface detection.")

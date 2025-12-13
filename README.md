@@ -18,24 +18,32 @@ clj -M:run /path/to/polylith-workspace json
 clj -M:run --help
 ```
 
+## Terminology
+
+This tool uses **package** as the generic term for a unit of code being analyzed:
+
+- **Polylith**: A package is a component (or base)
+- **Polylith-like**: A package is a subdirectory under `packages/`
+
+Throughout the documentation and output, "package" refers to whichever unit applies to your project structure.
+
 ## The Quadrant Model
 
 The metrics map each package onto a 2D space:
 
 ```
-        A=1 (abstract)
-             │
-   Zone of   │   Ideal
-  Uselessness│  (stable+abstract)
-             │
-I=1 ─────────┼───────── I=0
-(unstable)   │        (stable)
-             │
-    Ideal    │   Zone of
- (unstable+  │    Pain
-  concrete)  │
-             │
-        A=0 (concrete)
+      A=1 (abstract) /
+           │       /
+Zone of    │     /
+Uselessness│   /Ideal
+           │ /
+I=1────────/────────I=0
+         / │
+ Ideal /   │   Zone of
+     /     │    Pain
+   /       │
+ /   A=0 (concrete)
+main sequence
 ```
 
 - **X-axis: Instability (I)** — 0 (stable, many depend on you) to 1 (unstable, free to change)
@@ -58,7 +66,7 @@ When you run `clj -M:run /path/to/workspace package util`, you'll see five metri
 The number of other components that depend on this one.
 
 - **High Ca**: Many components use this one. It's a foundational piece.
-- **Low Ca**: Few or no components use this. It's a leaf or isolated component.
+- **Low Ca**: Few or no components use this. It's an entry point or isolated component.
 
 Example: `util` has Ca=29, meaning 29 other components depend on it.
 
@@ -93,7 +101,9 @@ This metric only considers namespaces that are **actually required by other comp
 - **A = 1.0 (Perfect)**: All external access goes through interface namespaces. Clean API.
 - **A = 0.0 (Leaky)**: All external access is to implementation namespaces. Other components are coupled to your internals.
 
-Example: `util` has A=1.0, meaning all 29 components that depend on it use its interface namespaces, not its implementation namespaces directly.
+Example: `util` has A=1.0, meaning all 29 components that depend on it use its interface namespace, not any implementation namespace directly.
+
+In Polylith, each component typically has one interface namespace. So A < 1.0 means implementation namespaces are being accessed directly - the more impl namespaces accessed, the lower the A value.
 
 ### 5. Distance (D) - "How far from the ideal?"
 
@@ -143,9 +153,37 @@ This is a problem because:
 
 ### What about bases and projects?
 
-**Bases** (like CLI runners) are entry points that wire components together. They're included in the dependency graph - if a base uses a component, that component's Ca (afferent coupling) increases. However, bases themselves aren't shown in the metrics table since they're always leaf nodes by design (nothing should depend on a base).
+**Bases** (like CLI runners) are entry points that wire components together. They're included in the dependency graph - if a base uses a component, that component's Ca (afferent coupling) increases. However, bases themselves are entry points by design (nothing should depend on a base).
 
 **Projects** are deployment configurations (deps.edn files), not code. They bundle components and bases for delivery but don't participate in the dependency graph.
+
+### Internal Dependents
+
+**Internal dependents** are packages that depend on a given package, *excluding bases*.
+
+- **Polylith**: Internal dependents = components that depend on this (bases excluded)
+- **Polylith-like**: Internal dependents = all packages that depend on this (no bases exist)
+
+Why exclude bases? Bases are external consumers - they're the boundary between your component system and the outside world. When measuring whether a component has a "leaky abstraction", we only care about other components bypassing the interface. Bases are *supposed* to wire things together; they don't count as "internal" to the component system.
+
+This affects two things:
+
+1. **Afferent Coupling (Ca)**: Only counts internal dependents, not bases
+2. **Entry Point Detection**: See below
+
+### Entry Points
+
+**Entry points** are packages consumed externally rather than by other internal packages.
+
+- **Polylith component**: Entry point if Ca=0 (no internal dependents) AND used by at least one base
+- **Polylith-like package**: Entry point if Ca=0 (no internal dependents)
+- **Polylith base**: Always an entry point (by definition, nothing should depend on a base)
+
+Why the difference? In Polylith, we can verify a component is actually consumed (by a base) rather than just dead code. In polylith-like, there are no bases, so we can only check that nothing internal depends on it.
+
+Entry points are excluded from the distance calculation because abstractness is not meaningful when there are no internal dependents to protect from implementation details.
+
+Note: Entry points are still components - they count as internal dependents when they depend on other components. Being an entry point doesn't make you "external" like a base.
 
 ---
 
@@ -157,7 +195,7 @@ This is a problem because:
 
 3. **Cycles are always bad** - Unlike Distance, cyclic dependencies are a real problem in any paradigm.
 
-4. **Leaf components (high I) don't matter much** - If nothing depends on you, there's nothing to leak to.
+4. **Entry point components (high I) don't matter much** - If nothing depends on you, there's nothing to leak to.
 
 5. **A = 1.0 is the goal for any component others depend on** - Route all external access through interface namespaces.
 
@@ -191,7 +229,7 @@ This is a problem because:
 We use `D = |A + I - 1|` rather than alternatives like `D = (1-A) * (1-I)` because:
 
 1. **It's the established standard** - easier to compare with other tools and literature
-2. **The "zone of uselessness" is informative** - components with D=1, A=1, I=1 aren't bugs; they're leaf components. The metric correctly identifies them as unusual, prompting investigation.
+2. **The "zone of uselessness" is informative** - components with D=1, A=1, I=1 aren't bugs; they're entry point components. The metric correctly identifies them as unusual, prompting investigation.
 
 ### Why are bases included in Ca but not shown in the report?
 
@@ -215,7 +253,7 @@ Bases would always show D=1 (zone of uselessness) because:
 - No code requires base namespaces externally → A=1 (fully abstract)
 - Therefore D = |1 + 1 - 1| = 1
 
-This is correct but not useful - bases are *designed* to be leaf nodes. Showing them would add noise without insight.
+This is correct but not useful - bases are *designed* to be entry points. Showing them would add noise without insight.
 
 ### Why is this tool Polylith-specific?
 

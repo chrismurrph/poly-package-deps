@@ -137,6 +137,15 @@
   [inverted-graph brick]
   (get inverted-graph brick #{}))
 
+(defn internal-dependents
+  "Return the set of internal dependents for a package.
+   Internal dependents are packages that depend on this one, excluding bases.
+   For Polylith: excludes bases (they are external consumers).
+   For polylith-like: no bases exist, so returns all dependents."
+  [inverted-graph pkg-name base-names]
+  (let [all-deps (direct-dependents inverted-graph pkg-name)]
+    (clojure.set/difference all-deps base-names)))
+
 ;; Phase 6: Cycle Detection
 
 (defn transitive-deps
