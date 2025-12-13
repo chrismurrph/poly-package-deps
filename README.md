@@ -63,21 +63,21 @@ When you run `clj -M:run /path/to/workspace package util`, you'll see five metri
 
 ### 1. Afferent Coupling (Ca) - "Who uses me?"
 
-The number of other components that depend on this one.
+The number of other packages that depend on this one.
 
-- **High Ca**: Many components use this one. It's a foundational piece.
-- **Low Ca**: Few or no components use this. It's an entry point or isolated component.
+- **High Ca**: Many packages use this one. It has high responsibility.
+- **Low Ca**: Few or no packages use this. It's an entry point or isolated package.
 
-Example: `util` has Ca=29, meaning 29 other components depend on it.
+Example: `util` has Ca=29, meaning 29 other packages depend on it.
 
 ### 2. Efferent Coupling (Ce) - "Who do I use?"
 
-The number of other components this one depends on.
+The number of other packages this one depends on.
 
-- **High Ce**: This component depends on many others. It's high in the dependency tree.
-- **Low Ce**: This component is self-contained or foundational.
+- **High Ce**: This package depends on many others. It's high in the dependency graph.
+- **Low Ce**: This package is self-contained or a dead end (depends on nothing).
 
-Example: `util` has Ce=0, meaning it doesn't depend on any other components.
+Example: `util` has Ce=0, meaning it doesn't depend on any other packages.
 
 ### 3. Instability (I) - "How risky is change?"
 
@@ -88,7 +88,7 @@ Ranges from 0 (stable) to 1 (unstable).
 - **I ≈ 0 (Stable)**: Many depend on this, it depends on little. Changes here ripple outward and could break many things. Be careful.
 - **I ≈ 1 (Unstable)**: Nothing depends on this, but it depends on others. Changes here are low-risk - you're only affected by others, not affecting them.
 
-Example: `util` has I=0.00 (maximally stable). If you change util, you could break 29 components. Think twice.
+Example: `util` has I=0.00 (maximally stable). If you change util, you could break 29 packages. Think twice.
 
 ### 4. Abstractness (A) - "How clean is the interface?"
 
@@ -96,12 +96,12 @@ Example: `util` has I=0.00 (maximally stable). If you change util, you could bre
 
 Ranges from 0 (leaky abstraction) to 1 (clean interface).
 
-This metric only considers namespaces that are **actually required by other components**. Internal namespaces that aren't used externally don't count.
+This metric only considers namespaces that are **actually required by other packages**. Internal namespaces that aren't used externally don't count.
 
-- **A = 1.0 (Perfect)**: All external access goes through interface namespaces. Clean API.
-- **A = 0.0 (Leaky)**: All external access is to implementation namespaces. Other components are coupled to your internals.
+- **A = 1.0 (Perfect)**: All access by other packages goes through interface namespaces. Clean API.
+- **A = 0.0 (Leaky)**: All access by other packages is to implementation namespaces. Other packages are coupled to your internals.
 
-Example: `util` has A=1.0, meaning all 29 components that depend on it use its interface namespace, not any implementation namespace directly.
+Example: `util` has A=1.0, meaning all 29 packages that depend on it use its interface namespace, not any implementation namespace directly.
 
 In Polylith, each component typically has one interface namespace. So A < 1.0 means implementation namespaces are being accessed directly - the more impl namespaces accessed, the lower the A value.
 
@@ -111,9 +111,9 @@ In Polylith, each component typically has one interface namespace. So A < 1.0 me
 
 Ranges from 0 (ideal) to 1 (worst).
 
-The "main sequence" is the line where A + I = 1. Components on this line balance abstraction and stability appropriately:
-- Stable components (low I) should be abstract (high A) to protect dependents
-- Unstable components (high I) can be concrete (low A) since nothing depends on them
+The "main sequence" is the line where A + I = 1. Packages on this line balance abstraction and stability appropriately:
+- Stable packages (low I) should be abstract (high A) to protect dependents
+- Unstable packages (high I) can be concrete (low A) since nothing depends on them
 
 - **D = 0**: On the main sequence. Abstraction matches stability.
 - **D = 1**: In a "zone" - either pain (concrete + stable) or uselessness (abstract + unstable).
@@ -124,17 +124,17 @@ The "main sequence" is the line where A + I = 1. Components on this line balance
 
 ### What does Abstractness measure?
 
-Unlike the original JDepend metric that counted all namespaces, **poly-metrics only considers namespaces accessed by other components** (not bases or projects).
+Unlike the original JDepend metric that counted all namespaces, **poly-metrics only considers namespaces accessed by other packages** (not bases or projects).
 
-- **A = 1.0**: All access from other components goes through interface namespaces.
-- **A < 1.0**: Some components require your implementation namespaces directly.
+- **A = 1.0**: All access from other packages goes through interface namespaces.
+- **A < 1.0**: Some packages require your implementation namespaces directly.
 - **A = 0.0**: All access bypasses your interface entirely.
 
-Components with no other components depending on them get A=1.0 by default (nothing to leak).
+Packages with no other packages depending on them get A=1.0 by default (nothing to leak).
 
 ### The Zones
 
-**Zone of Pain** (D=1 when A=0, I=0): Concrete and stable. Many depend on this component, but it exposes implementation details. Hard to change safely.
+**Zone of Pain** (D=1 when A=0, I=0): Concrete and stable. Many depend on this package, but it exposes implementation details. Hard to change safely.
 
 **Zone of Uselessness** (D=1 when A=1, I=1): Abstract and unstable. Nothing depends on this, but it depends on others. In Polylith, these are often entry-point components used by bases/projects - not truly useless.
 
@@ -145,15 +145,15 @@ antq: Ca=3, Ce=2, I=0.40, A=0.00, D=0.60
 ```
 
 This is a problem because:
-- 3 components depend on antq
+- 3 packages depend on antq
 - All access is to implementation namespaces (A=0)
-- Those components are coupled to antq's internals
+- Those packages are coupled to antq's internals
 
 **The fix**: Route external access through interface namespaces.
 
 ### What about bases and projects?
 
-**Bases** (like CLI runners) are entry points that wire components together. They're included in the dependency graph - if a base uses a component, that component's Ca (afferent coupling) increases. However, bases themselves are entry points by design (nothing should depend on a base).
+**Bases** (like CLI runners) are entry points that wire components together. They use components but don't count toward Ca (afferent coupling) - only other components count as internal dependents. Bases themselves are entry points by design (nothing should depend on a base).
 
 **Projects** are deployment configurations (deps.edn files), not code. They bundle components and bases for delivery but don't participate in the dependency graph.
 
@@ -164,7 +164,7 @@ This is a problem because:
 - **Polylith**: Internal dependents = components that depend on this (bases excluded)
 - **Polylith-like**: Internal dependents = all packages that depend on this (no bases exist)
 
-Why exclude bases? Bases are external consumers - they're the boundary between your component system and the outside world. When measuring whether a component has a "leaky abstraction", we only care about other components bypassing the interface. Bases are *supposed* to wire things together; they don't count as "internal" to the component system.
+Why exclude bases? Bases are external consumers - they're the boundary between your package system and the outside world. When measuring whether a package has a "leaky abstraction", we only care about other packages bypassing the interface. Bases are *supposed* to wire things together; they don't count as "internal" to the package system.
 
 This affects two things:
 
@@ -189,15 +189,15 @@ Note: Entry points are still components - they count as internal dependents when
 
 ## Practical Guidelines for Clojure/Polylith
 
-1. **Focus on Abstractness (A)** - This tells you if other components are bypassing your interface. A < 1.0 means there's leakage.
+1. **Focus on Abstractness (A)** - This tells you if other packages are bypassing your interface. A < 1.0 means there's leakage.
 
-2. **Stable components with low A are the problem** - If many depend on you (low I) and they're requiring your implementation namespaces (low A), you have a maintenance risk.
+2. **Stable packages with low A are the problem** - If many depend on you (low I) and they're requiring your implementation namespaces (low A), you have a maintenance risk.
 
 3. **Cycles are always bad** - Unlike Distance, cyclic dependencies are a real problem in any paradigm.
 
-4. **Entry point components (high I) don't matter much** - If nothing depends on you, there's nothing to leak to.
+4. **Entry point packages (high I) don't matter much** - If nothing depends on you, there's nothing to leak to.
 
-5. **A = 1.0 is the goal for any component others depend on** - Route all external access through interface namespaces.
+5. **A = 1.0 is the goal for any package others depend on** - Route all external access through interface namespaces.
 
 ---
 
@@ -206,10 +206,10 @@ Note: Entry points are still components - they count as internal dependents when
 | Metric | Good | Concerning | What to do |
 |--------|------|------------|------------|
 | Ca | Any | - | Just informational |
-| Ce | Any | Very high (> 15?) | Consider if component does too much |
+| Ce | Any | Very high (> 15?) | Consider if package does too much |
 | I | Any | - | Just informational |
 | A | 1.0 | < 1.0 (especially if stable) | Route external access through interface |
-| D | Low | High for stable components | Fix abstractness |
+| D | Low | High for stable packages | Fix abstractness |
 | Cycles | 0 | Any | Break the cycle |
 
 ---
@@ -218,7 +218,7 @@ Note: Entry points are still components - they count as internal dependents when
 
 - `0` - Healthy (mean distance < 0.5, no cycles)
 - `1` - Needs attention
-- `2` - Error (not a Polylith workspace, component not found)
+- `2` - Error (not a Polylith workspace, package not found)
 
 ---
 
@@ -229,24 +229,26 @@ Note: Entry points are still components - they count as internal dependents when
 We use `D = |A + I - 1|` rather than alternatives like `D = (1-A) * (1-I)` because:
 
 1. **It's the established standard** - easier to compare with other tools and literature
-2. **The "zone of uselessness" is informative** - components with D=1, A=1, I=1 aren't bugs; they're entry point components. The metric correctly identifies them as unusual, prompting investigation.
+2. **The "zone of uselessness" is informative** - packages with D=1, A=1, I=1 aren't bugs; they're entry point packages. The metric correctly identifies them as unusual, prompting investigation.
 
-### Why are bases included in Ca but not shown in the report?
+### Why are bases excluded from Ca?
 
-Early versions showed a "Bases" column listing which bases used each component. We removed it because:
+Afferent coupling (Ca) only counts *internal dependents* - other packages that depend on this one. Bases are excluded because:
 
-1. **Bases are already in Ca** - the dependency graph includes bases, so a component used by 2 bases already has those counted in its afferent coupling
-2. **Redundant information** - the DEPENDENTS section of component detail already lists bases alongside components
-3. **Simpler report** - fewer columns, same information
+1. **Bases are external consumers** - they wire packages together for deployment, not for reuse within the package system
+2. **Abstractness should measure internal coupling** - we want to know if *other packages* are bypassing the interface, not if bases are
+3. **Bases always access packages** - including them would inflate Ca for packages used by multiple bases without providing insight
+
+The DEPENDENTS section of package detail still lists bases alongside packages, so you can see full usage. But for metrics purposes, only internal dependents matter.
 
 ### Why no "Projects" column?
 
-We initially added a "Projects" column showing which projects included each component. We removed it because:
+We initially added a "Projects" column showing which projects included each package. We removed it because:
 
-1. **Every component is in projects** - in a typical Polylith workspace, all components are bundled into deployment projects, so the column provided no discriminating information
+1. **Every package is in projects** - in a typical Polylith workspace, all packages are bundled into deployment projects, so the column provided no discriminating information
 2. **Projects aren't code dependencies** - they're packaging configurations, not part of the dependency graph
 
-### Why only show components (not bases) in the metrics table?
+### Why only show packages (not bases) in the metrics table?
 
 Bases would always show D=1 (zone of uselessness) because:
 - Nothing depends on a base (Ca=0) → I=1 (fully unstable)
@@ -279,7 +281,7 @@ But **Abstractness becomes meaningless** without a way to distinguish interface 
 - User configuration specifying which namespaces are interfaces
 - Drop Abstractness entirely and just report Ca/Ce/I/cycles
 
-The core value of this tool is the Abstractness metric - identifying leaky abstractions where other components bypass the interface. Without Polylith's conventions, you'd need to establish your own.
+The core value of this tool is the Abstractness metric - identifying leaky abstractions where other packages bypass the interface. Without Polylith's conventions, you'd need to establish your own.
 
 ### Future: Support for regular Clojure projects?
 
