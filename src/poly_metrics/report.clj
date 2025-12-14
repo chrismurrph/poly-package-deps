@@ -569,7 +569,7 @@
     (println "POSITION")
     (doseq [line grid]
       (println line))
-    (println "                      main sequence")
+    (println "                       main sequence")
     (println)))
 
 (defn std-static-diagram
