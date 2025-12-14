@@ -27,23 +27,22 @@ This tool uses **package** as the generic term for a unit of code being analyzed
 
 Throughout the documentation and output, "package" refers to whichever unit applies to your project structure.
 
-## The Quadrant Model
+## The Diagram
 
 The metrics map each package onto a 2D space:
 
 ```
-      A=1 (abstract) /
-           │       /
-Zone of    │     /
-Uselessness│   /Ideal
-           │ /
-I=1────────/────────I=0
-         / │
- Ideal /   │   Zone of
-     /     │    Pain
-   /       │
- /   A=0 (concrete)
-main sequence
+A=1        │
+   \       │  Zone of
+     \     │Uselessness
+       \   │
+         \ │
+I=0────────\────────I=1
+           │ \
+           │   \
+Zone of    │     \
+ Pain      │       \
+A=0     main sequence\
 ```
 
 - **X-axis: Instability (I)** — 0 (stable, many depend on you) to 1 (unstable, free to change)
@@ -51,9 +50,9 @@ main sequence
 - **Main sequence**: The diagonal where A + I = 1. Packages on this line are well-balanced.
 - **Distance (D)**: How far from the main sequence. D=0 is ideal.
 
-**Zone of Pain** (bottom-right): Stable but concrete. Many depend on you, but you expose implementation details. Hard to change safely.
+**Zone of Pain** (bottom-left, near I=0, A=0): Stable but concrete. Many depend on you, but you expose implementation details. Hard to change safely.
 
-**Zone of Uselessness** (top-left): Unstable but abstract. Clean interface, but nothing uses it. Why bother? Answer: Might be the API of a library - it gets used by other unknown code.
+**Zone of Uselessness** (top-right, near I=1, A=1): Unstable but abstract. Clean interface, but nothing uses it. Why bother? Answer: Might be the API of a library - it gets used by other unknown code.
 
 ---
 
