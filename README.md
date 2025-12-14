@@ -39,10 +39,10 @@ A=1        │
          \ │
 I=0────────\────────I=1
            │ \
-           │   \
-Zone of    │     \
- Pain      │       \
-A=0        │         main sequence
+Zone of    │   \
+ Pain      │     \
+           │       \
+A=0        │         \ main sequence
 ```
 
 - **X-axis: Instability (I)** — 0 (stable, many depend on you) to 1 (unstable, free to change)
