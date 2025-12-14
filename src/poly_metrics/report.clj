@@ -485,20 +485,12 @@
 (def ^:private std-center-col 11)
 
 (defn- std-make-grid
-  "Layer 1: Create base grid with traditional X-Y axes.
-   Returns a vector of strings, each of std-cols length.
-   Vertical bar on left (col 0), horizontal bar at bottom (last row)."
+  "Layer 1: Create empty grid (no axis lines).
+   Returns a vector of strings, each of std-cols length."
   []
-  (let [last-row (dec std-rows)]
-    (vec
-     (for [row (range std-rows)]
-       (apply str
-              (for [col (range std-cols)]
-                (cond
-                  (and (= row last-row) (= col 0)) \└
-                  (= row last-row) \─
-                  (= col 0) \│
-                  :else \space)))))))
+  (vec
+   (for [_ (range std-rows)]
+     (apply str (repeat std-cols \space)))))
 
 (defn- std-overlay-char
   "Overlay a single character at position, returning updated grid."
