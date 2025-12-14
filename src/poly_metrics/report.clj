@@ -564,12 +564,12 @@
                  (std-overlay-text 2 12 "Uselessness")
                  (std-overlay-text 8 0 "Zone of")
                  (std-overlay-text 9 1 "Pain")
-                 (std-overlay-text (dec std-rows) 8 "main sequence")
                  (std-overlay-char marker-row marker-col \*))]
     (println)
     (println "POSITION")
     (doseq [line grid]
       (println line))
+    (println "                    main sequence")
     (println)))
 
 (defn std-static-diagram
@@ -585,8 +585,7 @@
       (std-overlay-text 1 14 "Zone of")
       (std-overlay-text 2 12 "Uselessness")
       (std-overlay-text 8 0 "Zone of")
-      (std-overlay-text 9 1 "Pain")
-      (std-overlay-text (dec std-rows) 8 "main sequence")))
+      (std-overlay-text 9 1 "Pain")))
 
 (defn- make-grid
   "Layer 1: Create base grid with axes.
