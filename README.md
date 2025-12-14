@@ -22,8 +22,8 @@ clj -M:run --help
 
 This tool uses **package** as the generic term for a unit of code being analyzed:
 
-- **Polylith**: A package is a component (or base)
-- **Polylith-like**: A package is a subdirectory under `packages/`
+- **Polylith**: A package is the Clojure namespaces that make up the implementation of a component
+- **Polylith-like**: A package is a subdirectory under `packages/`, which again can have multiple namespaces
 
 Throughout the documentation and output, "package" refers to whichever unit applies to your project structure.
 
@@ -53,7 +53,7 @@ main sequence
 
 **Zone of Pain** (bottom-right): Stable but concrete. Many depend on you, but you expose implementation details. Hard to change safely.
 
-**Zone of Uselessness** (top-left): Unstable but abstract. Clean interface, but nothing uses it. Why bother?
+**Zone of Uselessness** (top-left): Unstable but abstract. Clean interface, but nothing uses it. Why bother? Answer: Might be the API of a library - it gets used by other unknown code.
 
 ---
 
@@ -112,10 +112,13 @@ In Polylith, each component typically has one interface namespace. So A < 1.0 me
 Ranges from 0 (ideal) to 1 (worst).
 
 The "main sequence" is the line where A + I = 1. Packages on this line balance abstraction and stability appropriately:
+
 - Stable packages (low I) should be abstract (high A) to protect dependents
+
 - Unstable packages (high I) can be concrete (low A) since nothing depends on them
 
 - **D = 0**: On the main sequence. Abstraction matches stability.
+
 - **D = 1**: In a "zone" - either pain (concrete + stable) or uselessness (abstract + unstable).
 
 ---
@@ -145,6 +148,7 @@ antq: Ca=3, Ce=2, I=0.40, A=0.00, D=0.60
 ```
 
 This is a problem because:
+
 - 3 packages depend on antq
 - All access is to implementation namespaces (A=0)
 - Those packages are coupled to antq's internals
@@ -203,14 +207,14 @@ Note: Entry points are still components - they count as internal dependents when
 
 ## Metrics Interpretation Summary
 
-| Metric | Good | Concerning | What to do |
-|--------|------|------------|------------|
-| Ca | Any | - | Just informational |
-| Ce | Any | Very high (> 15?) | Consider if package does too much |
-| I | Any | - | Just informational |
-| A | 1.0 | < 1.0 (especially if stable) | Route external access through interface |
-| D | Low | High for stable packages | Fix abstractness |
-| Cycles | 0 | Any | Break the cycle |
+| Metric | Good | Concerning                   | What to do                              |
+| ------ | ---- | ---------------------------- | --------------------------------------- |
+| Ca     | Any  | -                            | Just informational                      |
+| Ce     | Any  | Very high (> 15?)            | Consider if package does too much       |
+| I      | Any  | -                            | Just informational                      |
+| A      | 1.0  | < 1.0 (especially if stable) | Route external access through interface |
+| D      | Low  | High for stable packages     | Fix abstractness                        |
+| Cycles | 0    | Any                          | Break the cycle                         |
 
 ---
 
@@ -251,6 +255,7 @@ We initially added a "Projects" column showing which projects included each pack
 ### Why only show packages (not bases) in the metrics table?
 
 Bases would always show D=1 (zone of uselessness) because:
+
 - Nothing depends on a base (Ca=0) → I=1 (fully unstable)
 - No code requires base namespaces externally → A=1 (fully abstract)
 - Therefore D = |1 + 1 - 1| = 1
@@ -260,6 +265,7 @@ This is correct but not useful - bases are *designed* to be entry points. Showin
 ### Why is this tool Polylith-specific?
 
 JDepend works on any Java codebase because Java has explicit constructs the metrics rely on:
+
 - **Packages** are declared (`package com.foo.bar`)
 - **Abstract types** are declared (`abstract class`, `interface`)
 
@@ -272,11 +278,13 @@ Clojure has neither. This tool works with Polylith because Polylith *creates* th
 **Could this work for regular Clojure?**
 
 Partially. Ca, Ce, Instability, and cycle detection would work - you'd just need to define what a "package" is:
+
 - Each directory?
 - Each top-level namespace prefix?
 - User-configured groupings?
 
 But **Abstractness becomes meaningless** without a way to distinguish interface from implementation. Options would be:
+
 - A naming convention (e.g., `*_api.clj` files are interfaces)
 - User configuration specifying which namespaces are interfaces
 - Drop Abstractness entirely and just report Ca/Ce/I/cycles
