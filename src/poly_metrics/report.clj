@@ -485,19 +485,20 @@
 (def ^:private std-center-col 11)
 
 (defn- std-make-grid
-  "Layer 1: Create base grid with axes.
+  "Layer 1: Create base grid with traditional X-Y axes.
    Returns a vector of strings, each of std-cols length.
-   Vertical bar at std-center-col, horizontal bar at std-center-row."
+   Vertical bar on left (col 0), horizontal bar at bottom (last row)."
   []
-  (vec
-   (for [row (range std-rows)]
-     (apply str
-            (for [col (range std-cols)]
-              (cond
-                (and (= row std-center-row) (= col std-center-col)) \┼
-                (= row std-center-row) \─
-                (= col std-center-col) \│
-                :else \space))))))
+  (let [last-row (dec std-rows)]
+    (vec
+     (for [row (range std-rows)]
+       (apply str
+              (for [col (range std-cols)]
+                (cond
+                  (and (= row last-row) (= col 0)) \└
+                  (= row last-row) \─
+                  (= col 0) \│
+                  :else \space)))))))
 
 (defn- std-overlay-char
   "Overlay a single character at position, returning updated grid."
@@ -523,44 +524,52 @@
    Standard orientation: (0,1) at top-left to (1,0) at bottom-right.
    Uses backslash character."
   [grid]
-  (reduce
-   (fn [g row]
-     ;; Diagonal: at center-row, col = center-col
-     ;; Each row up, col decreases by 2; each row down, col increases by 2
-     (let [col (+ std-center-col (* 2 (- row std-center-row)))]
-       (std-overlay-char g row col \\)))
-   grid
-   (range std-rows)))
+  (let [last-row (dec std-rows)
+        last-col (dec std-cols)]
+    (reduce
+     (fn [g row]
+       ;; Diagonal from (row 0, col 1) to (row last-row-1, col last-col)
+       ;; Linear interpolation: col = 1 + row * (last-col - 1) / (last-row - 1)
+       (let [col (int (Math/round (double (+ 1 (* row (/ (- last-col 1) (- last-row 1)))))))]
+         (std-overlay-char g row col \\)))
+     grid
+     (range last-row))))
 
 (defn- std-position-to-grid
   "Convert I/A values to grid row/col positions.
-   Standard orientation: I=0 -> col 1, I=1 -> col 21
-   A=1 -> row 1, A=0 -> row 9"
+   Standard orientation: I=0 -> col 1, I=1 -> col last
+   A=1 -> row 0, A=0 -> row last-1 (above the x-axis)"
   [instability abstractness]
-  (let [i-left 1
-        i-right (- std-cols 2)
-        a-top 1
-        a-bottom (- std-rows 2)
-        col (int (Math/round (+ i-left (* (- i-right i-left) instability))))
-        row (int (Math/round (+ a-top (* (- a-bottom a-top) (- 1.0 abstractness)))))]
+  (let [last-row (dec std-rows)
+        last-col (dec std-cols)
+        ;; col: I=0 -> col 1, I=1 -> col last-col
+        col (int (Math/round (+ 1 (* instability (- last-col 1)))))
+        ;; row: A=1 -> row 0, A=0 -> row last-row-1
+        row (int (Math/round (* (- 1.0 abstractness) (- last-row 1))))]
     [row col]))
 
 (defn- std-base-diagram
   "Build the base diagram with all labels (no marker).
    Shared by both dynamic and static diagram functions."
   []
-  (let [grid (-> (std-make-grid)
+  (let [last-row (dec std-rows)
+        last-col (dec std-cols)
+        grid (-> (std-make-grid)
                  (std-draw-diagonal)
+                 ;; A=1 at top-left
                  (std-overlay-text 0 0 "A=1")
-                 (std-overlay-text (dec std-rows) 0 "A=0")
-                 (std-overlay-text std-center-row 0 "I=0")
-                 (std-overlay-text std-center-row (- std-cols 3) "I=1")
+                 ;; I=0 above A=0, both at bottom-left
+                 (std-overlay-text (- last-row 1) 0 "I=0")
+                 (std-overlay-text last-row 0 "A=0")
+                 ;; I=1 at bottom-right
+                 (std-overlay-text last-row (- std-cols 3) "I=1")
+                 ;; Zone labels
                  (std-overlay-text 1 14 "Zone of")
                  (std-overlay-text 2 12 "Uselessness")
-                 (std-overlay-text 7 0 "Zone of")
-                 (std-overlay-text 8 1 "Pain"))]
+                 (std-overlay-text 6 1 "Zone of")
+                 (std-overlay-text 7 2 "Pain"))]
     ;; Append "main sequence" to the last line
-    (update grid (dec std-rows) str " main sequence")))
+    (update grid last-row str " main sequence")))
 
 (defn std-render-quadrant-diagram
   "Render the A/I quadrant diagram with standard orientation.
