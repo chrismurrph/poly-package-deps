@@ -38,9 +38,9 @@ A=1        │
        \   │
          \ │
 I=0────────\────────I=1
-           │ \
-Zone of    │   \
- Pain      │     \
+Zone of    │ \
+ Pain      │   \
+           │     \
            │       \
 A=0        │         \ main sequence
 ```

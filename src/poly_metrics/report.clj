@@ -562,8 +562,8 @@
                  (std-overlay-text std-center-row (- std-cols 3) "I=1")
                  (std-overlay-text 1 14 "Zone of")
                  (std-overlay-text 2 12 "Uselessness")
-                 (std-overlay-text 7 0 "Zone of")
-                 (std-overlay-text 8 1 "Pain")
+                 (std-overlay-text 6 0 "Zone of")
+                 (std-overlay-text 7 1 "Pain")
                  (std-overlay-char marker-row marker-col \*))]
     (println)
     (println "POSITION")
@@ -584,8 +584,8 @@
       (std-overlay-text std-center-row (- std-cols 3) "I=1")
       (std-overlay-text 1 14 "Zone of")
       (std-overlay-text 2 12 "Uselessness")
-      (std-overlay-text 7 0 "Zone of")
-      (std-overlay-text 8 1 "Pain")))
+      (std-overlay-text 6 0 "Zone of")
+      (std-overlay-text 7 1 "Pain")))
 
 (defn- make-grid
   "Layer 1: Create base grid with axes.
