@@ -545,6 +545,23 @@
         row (int (Math/round (+ a-top (* (- a-bottom a-top) (- 1.0 abstractness)))))]
     [row col]))
 
+(defn- std-base-diagram
+  "Build the base diagram with all labels (no marker).
+   Shared by both dynamic and static diagram functions."
+  []
+  (let [grid (-> (std-make-grid)
+                 (std-draw-diagonal)
+                 (std-overlay-text 0 0 "A=1")
+                 (std-overlay-text (dec std-rows) 0 "A=0")
+                 (std-overlay-text std-center-row 0 "I=0")
+                 (std-overlay-text std-center-row (- std-cols 3) "I=1")
+                 (std-overlay-text 1 14 "Zone of")
+                 (std-overlay-text 2 12 "Uselessness")
+                 (std-overlay-text 7 0 "Zone of")
+                 (std-overlay-text 8 1 "Pain"))]
+    ;; Append "main sequence" to the last line
+    (update grid (dec std-rows) str " main sequence")))
+
 (defn std-render-quadrant-diagram
   "Render the A/I quadrant diagram with standard orientation.
    I (instability) is x-axis: 0 on left, 1 on right
@@ -554,38 +571,19 @@
    Zone of Uselessness: near (1,1) top-right"
   [instability abstractness]
   (let [[marker-row marker-col] (std-position-to-grid instability abstractness)
-        grid (-> (std-make-grid)
-                 (std-draw-diagonal)
-                 (std-overlay-text 0 0 "A=1")
-                 (std-overlay-text (dec std-rows) 0 "A=0")
-                 (std-overlay-text std-center-row 0 "I=0")
-                 (std-overlay-text std-center-row (- std-cols 3) "I=1")
-                 (std-overlay-text 1 14 "Zone of")
-                 (std-overlay-text 2 12 "Uselessness")
-                 (std-overlay-text 6 0 "Zone of")
-                 (std-overlay-text 7 1 "Pain")
+        grid (-> (std-base-diagram)
                  (std-overlay-char marker-row marker-col \*))]
     (println)
     (println "POSITION")
     (doseq [line grid]
       (println line))
-    (println "                       main sequence")
     (println)))
 
 (defn std-static-diagram
   "Generate the static diagram for README (no marker).
    Returns a vector of strings."
   []
-  (-> (std-make-grid)
-      (std-draw-diagonal)
-      (std-overlay-text 0 0 "A=1")
-      (std-overlay-text (dec std-rows) 0 "A=0")
-      (std-overlay-text std-center-row 0 "I=0")
-      (std-overlay-text std-center-row (- std-cols 3) "I=1")
-      (std-overlay-text 1 14 "Zone of")
-      (std-overlay-text 2 12 "Uselessness")
-      (std-overlay-text 6 0 "Zone of")
-      (std-overlay-text 7 1 "Pain")))
+  (std-base-diagram))
 
 (defn- make-grid
   "Layer 1: Create base grid with axes.
