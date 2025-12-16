@@ -318,13 +318,16 @@
 
 (defn collect-package-external-requires
   "Collect all namespace dependencies across packages.
-   Returns a map of {required-ns #{requiring-package-names}}.
-   Only includes requires that cross package boundaries."
+   Returns a map of {required-ns #{{:name pkg-name :type pkg-type} ...}}.
+   Only includes requires that cross package boundaries.
+
+   Accessor maps include :name and :type so consumers can distinguish
+   between component-to-component access vs dev/test accessing components."
   [root-dir packages]
   (let [ns-to-pkg (build-ns-to-package-map root-dir packages)
 
         collect-for-package (fn [pkg]
-                              (let [pkg-name (:name pkg)]
+                              (let [pkg-info {:name (:name pkg) :type (:type pkg)}]
                                 (->> (:files pkg)
                                      (map #(io/file root-dir %))
                                      (mapcat (fn [f]
@@ -332,14 +335,14 @@
                                                  (tns-parse/deps-from-ns-decl ns-decl))))
                                      ;; Keep only known package namespaces
                                      (filter #(get ns-to-pkg %))
-                                     ;; Tag each with the requiring package
-                                     (map (fn [req-ns] [req-ns pkg-name])))))]
+                                     ;; Tag each with the requiring package info
+                                     (map (fn [req-ns] [req-ns pkg-info])))))]
 
     ;; Collect all requires, only count cross-package dependencies
-    (reduce (fn [acc [req-ns requiring-pkg]]
+    (reduce (fn [acc [req-ns requiring-pkg-info]]
               (let [required-pkg (get ns-to-pkg req-ns)]
-                (if (not= required-pkg requiring-pkg)
-                  (update acc req-ns (fnil conj #{}) requiring-pkg)
+                (if (not= required-pkg (:name requiring-pkg-info))
+                  (update acc req-ns (fnil conj #{}) requiring-pkg-info)
                   acc)))
             {}
             (mapcat collect-for-package packages))))

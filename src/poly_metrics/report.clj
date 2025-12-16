@@ -409,14 +409,27 @@
              :else
              "Review the Abstractness and Instability metrics to understand why.")))))
 
+(defn- format-accessor
+  "Format an accessor map {:name :type} for display.
+   Shows type abbreviation for non-component accessors."
+  [{:keys [name type]}]
+  (case type
+    :polylith-component name
+    :polylith-base (str name " (base)")
+    :clojure-package (str name " (clj)")
+    :polylith-like-package name
+    :polylith-like-interface (str name " (ifc)")
+    name))
+
 (defn- format-impl-ns-summary
   "Format a summary of leaky implementation namespaces and their accessors."
   [impl-ns-details]
   (when (seq impl-ns-details)
     (let [all-accessors (->> impl-ns-details vals (apply clojure.set/union))
-          ns-names (map str (keys impl-ns-details))]
+          ns-names (map str (keys impl-ns-details))
+          accessor-strs (map format-accessor (sort-by :name all-accessors))]
       (str "Leaky namespaces: " (clojure.string/join ", " (sort ns-names)) ". "
-           "Accessed by: " (clojure.string/join ", " (sort all-accessors)) "."))))
+           "Accessed by: " (clojure.string/join ", " accessor-strs) "."))))
 
 (defn describe-overall-health
   "Give an overall assessment of the package."
@@ -779,14 +792,14 @@
           (println "  Implementation namespaces accessed directly (leaky):")
           (doseq [[ns-sym accessors] (sort-by (comp str first) impl-ns-details)]
             (println (format "    %s" ns-sym))
-            (println (format "      accessed by: %s" (clojure.string/join ", " (sort accessors)))))
+            (println (format "      accessed by: %s" (clojure.string/join ", " (map format-accessor (sort-by :name accessors))))))
           (println))
         ;; Show interface namespace details
         (when (seq interface-ns-details)
           (println "  Interface namespaces accessed (clean):")
           (doseq [[ns-sym accessors] (sort-by (comp str first) interface-ns-details)]
             (println (format "    %s" ns-sym))
-            (println (format "      accessed by: %s" (clojure.string/join ", " (sort accessors)))))
+            (println (format "      accessed by: %s" (clojure.string/join ", " (map format-accessor (sort-by :name accessors))))))
           (println))
         (println (str "  " (describe-abstractness (:abstractness m) interface-ns total-ns)))
         (println)
