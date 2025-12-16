@@ -43,22 +43,28 @@
   [m]
   (let [;; Support both old (:brick-name/:brick-type) and new (:name/:type) field names
         pkg-name (or (:name m) (:brick-name m))
-        pkg-type (or (:type m) (:brick-type m))]
-    (format (str "%-" col-pkg "s %-" col-type "s %3d %3d %5s %5s %5s")
+        pkg-type (or (:type m) (:brick-type m))
+        ;; Show 'x' for unofficial Polylith packages, blank otherwise
+        official-marker (if (and (#{:polylith-component :polylith-base} pkg-type)
+                                 (not (:official? m)))
+                          "x"
+                          "")]
+    (format (str "%-" col-pkg "s %-" col-type "s %3d %3d %5s %5s %5s  %s")
             pkg-name
             (type-display-name pkg-type)
             (:ca m)
             (:ce m)
             (format-metric (:instability m) 2)
             (format-metric (:abstractness m) 2)
-            (format-metric (:distance m) 2))))
+            (format-metric (:distance m) 2)
+            official-marker)))
 
 (defn metrics-table-header
   "Return the table header string."
   []
-  (let [total-width (+ col-pkg col-type 4 4 6 6 6)]
-    (str (format (str "%-" col-pkg "s %-" col-type "s %3s %3s %5s %5s %5s")
-                 "Package" "Type" "Ca" "Ce" "I" "A" "D")
+  (let [total-width (+ col-pkg col-type 4 4 6 6 6 10)]  ;; +10 for "  Official"
+    (str (format (str "%-" col-pkg "s %-" col-type "s %3s %3s %5s %5s %5s  %s")
+                 "Package" "Type" "Ca" "Ce" "I" "A" "D" "Official")
          "\n"
          (apply str (repeat total-width "-")))))
 

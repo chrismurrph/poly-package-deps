@@ -99,6 +99,7 @@
   [root-dir package dep-graph inverted-graph external-requires ns-to-pkg base-names]
   (let [pkg-name (:name package)
         pkg-type (:type package)
+        official? (:official? package)
         ;; Internal dependents = all dependents minus bases
         internal-deps (graph/internal-dependents inverted-graph pkg-name base-names)
         ;; Base dependents needed for entry-point detection in Polylith
@@ -122,7 +123,8 @@
        :distance nil
        :abstract-ns nil
        :total-ns nil
-       :entry-point? true}
+       :entry-point? true
+       :official? official?}
 
       ;; Has interface detection - include A/D
       abs-data
@@ -139,7 +141,8 @@
          :total-ns (:total-ns abs-data)
          :impl-ns-details (:impl-ns-details abs-data)
          :interface-ns-details (:interface-ns-details abs-data)
-         :entry-point? false})
+         :entry-point? false
+         :official? official?})
 
       ;; No interface detection - skip A/D
       :else
@@ -152,7 +155,8 @@
        :distance nil
        :abstract-ns nil
        :total-ns nil
-       :entry-point? false})))
+       :entry-point? false
+       :official? official?})))
 
 (defn all-package-metrics
   "Calculate metrics for all discovered packages.

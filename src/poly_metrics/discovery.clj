@@ -3,7 +3,8 @@
    Walks the source tree to find all packages, then classifies each
    based on its location (Polylith, Polylith-like, or plain Clojure)."
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [poly-metrics.workspace :as ws]))
 
 (defn clj-file?
   "Returns true if file is a Clojure source file (.clj or .cljc)."
@@ -112,15 +113,33 @@
       :else
       nil)))
 
+(defn- official-package?
+  "Determine if a package is 'official' (in the root-level components/bases directories).
+   - Polylith components: official if in root components/ directory
+   - Polylith bases: official if in root bases/ directory
+   - Polylith-like and Clojure packages: always considered official (no 'x' marker)"
+  [pkg-name pkg-type official-components official-bases]
+  (case pkg-type
+    :polylith-component (contains? official-components pkg-name)
+    :polylith-base (contains? official-bases pkg-name)
+    ;; All other types are considered official (no 'x' marker)
+    true))
+
 (defn discover-packages
   "Walk the source tree and discover all packages with their types.
    Returns a sequence of package maps:
-   [{:name \"util\" :type :polylith-component :src-dirs [\"components/util/src\"] :files [...]} ...]
+   [{:name \"util\" :type :polylith-component :src-dirs [\"components/util/src\"] :files [...] :official? true} ...]
 
    Packages with the same name from different source roots are merged.
-   Raises an exception if the same filename appears in multiple source roots for the same package."
+   Raises an exception if the same filename appears in multiple source roots for the same package.
+
+   The :official? field indicates whether a Polylith component/base is in the root-level
+   directory (official) or from a nested workspace like examples/ (unofficial)."
   [root-dir]
   (let [all-files (find-all-clj-files root-dir)
+        ;; Get official components/bases from root-level directories
+        official-components (or (ws/find-components root-dir) #{})
+        official-bases (or (ws/find-bases root-dir) #{})
         ;; Classify each file and keep track of the filename
         classified (->> all-files
                         (map (fn [f]
@@ -158,7 +177,8 @@
                   {:name pkg-name
                    :type pkg-type
                    :src-dirs (vec src-dirs)
-                   :files (vec files)})))
+                   :files (vec files)
+                   :official? (official-package? pkg-name pkg-type official-components official-bases)})))
          (sort-by :name))))
 
 (defn packages-by-type
