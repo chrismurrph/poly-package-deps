@@ -34,14 +34,14 @@ The metrics map each package onto a 2D space:
 ```
 A=1
    \          Zone of
-      \     Uselessness
-        \
-          \
-             \
- Zone of       \
-  Pain           \
-                    \
-I=0                   \
+     \      Uselessness
+       \
+         \
+           \
+ Zone of     \
+  Pain         \
+                 \
+I=0                \
 A=0                 I=1 main sequence
 ```
 

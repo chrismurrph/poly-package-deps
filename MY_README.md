@@ -20,10 +20,10 @@ clj -M:run --help
 
 ## Terminology
 
-This tool uses **package** as the generic term for a container of units of code, where a unit of code was a class, but for Clojure will be a namespace. A designer has decided to put these units of code together to carry out a common service. Clojure does not have any intentional container: namespaces and functions are all there is. When Polylith came out, it created the idea of a package.
+This tool uses **package** as the generic term for a container of units of code, where a unit of code was a Java class, but for Clojure will be a namespace. Package: a designer has decided to put units of code together to carry out a common service. Clojure does not have any such intentional container: namespaces and functions are all there is. When Polylith came out, it created the idea of a package for Clojure code.
 
 - **Polylith**: A package is the Clojure namespaces that make up the implementation of a component
-- **Polylith-like**: A package is a subdirectory under `packages/`, which again can have multiple namespaces
+- **Polylith-like**: A package is a subdirectory under `packages/`, which again can have multiple namespaces, again recursively nested under other subdirectories.
 
 Throughout the documentation and output, "package" refers to whichever container applies to your project structure.
 
@@ -32,17 +32,17 @@ Throughout the documentation and output, "package" refers to whichever container
 The metrics map each package onto a 2D space:
 
 ```
-A=1        │
-   \       │  Zone of
-     \     │Uselessness
-       \   │
-         \ │
-I=0────────\────────I=1
-           │ \
-Zone of    │   \
- Pain      │     \
-           │       \
-A=0        │         \  main sequence
+A=1
+   \          Zone of
+     \      Uselessness
+       \
+         \
+           \
+ Zone of     \
+  Pain         \
+                 \
+I=0                \
+A=0                 I=1 main sequence
 ```
 
 - **X-axis: Instability (I)** — 0 (stable, many depend on you) to 1 (unstable, free to change)
@@ -308,4 +308,4 @@ This would provide coupling analysis and cycle detection for any Clojure codebas
 - [JDepend](https://github.com/clarkware/jdepend) - Original Java tool
 - [Robert Martin's Stability Metrics](https://www.objectmentor.com/resources/articles/stability.pdf) - The theory
 - [Polylith](https://polylith.gitbook.io/) - The architecture this tool analyzes
-- https://www.researchgate.net/publication/31598248_A_Validation_of_Martin's_Metric - Academic validation
+- [Criticism/Validation of the Metrics](https://www.researchgate.net/publication/31598248_A_Validation_of_Martin's_Metric) - Academic validation
