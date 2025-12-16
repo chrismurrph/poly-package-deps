@@ -73,12 +73,15 @@
 
 (defn interface-ns?
   "Returns true if the namespace symbol represents an interface namespace.
-   Interface namespaces end with '.interface' or contain '.interface.'."
+   Interface namespaces end with '.interface' or contain '.interface.'.
+   Also supports '.ifc' as an alternative (used in ClojureScript where 'interface' is reserved)."
   [ns-sym]
   (when ns-sym
     (let [ns-str (str ns-sym)]
       (or (str/ends-with? ns-str ".interface")
-          (str/includes? ns-str ".interface.")))))
+          (str/includes? ns-str ".interface.")
+          (str/ends-with? ns-str ".ifc")
+          (str/includes? ns-str ".ifc.")))))
 
 (defn interface-ns->component
   "Extract the component name from an interface namespace.

@@ -403,6 +403,15 @@
              :else
              "Review the Abstractness and Instability metrics to understand why.")))))
 
+(defn- format-impl-ns-summary
+  "Format a summary of leaky implementation namespaces and their accessors."
+  [impl-ns-details]
+  (when (seq impl-ns-details)
+    (let [all-accessors (->> impl-ns-details vals (apply clojure.set/union))
+          ns-names (map str (keys impl-ns-details))]
+      (str "Leaky namespaces: " (clojure.string/join ", " (sort ns-names)) ". "
+           "Accessed by: " (clojure.string/join ", " (sort all-accessors)) "."))))
+
 (defn describe-overall-health
   "Give an overall assessment of the package."
   [m]
@@ -414,11 +423,13 @@
         interface-ns (or (:abstract-ns m) 0)
         total-ns (or (:total-ns m) 0)
         impl-ns (- total-ns interface-ns)
+        impl-ns-details (or (:impl-ns-details m) {})
         no-access-from-other-components? (zero? total-ns)
         clean-interface? (and (pos? interface-ns) (zero? impl-ns))
         leaky? (pos? impl-ns)
         stable? (< i 0.5)
-        has-dependents? (pos? ca)]
+        has-dependents? (pos? ca)
+        impl-summary (format-impl-ns-summary impl-ns-details)]
     (cond
       ;; No access from other packages
       no-access-from-other-components?
@@ -448,18 +459,21 @@
       (str "PROBLEM: Leaky abstraction in a stable package. "
            impl-ns " implementation namespace(s) are required directly by other packages. "
            "Since " ca " package(s) depend on this, changes to those internals are risky. "
+           impl-summary " "
            "FIX: Expose needed functionality through interface namespaces, then update callers.")
 
       ;; Leaky but less critical (unstable)
       (and leaky? (not stable?))
       (str "MINOR ISSUE: " impl-ns " implementation namespace(s) are required by other packages. "
            "Since this package is unstable (few depend on it), this is less critical. "
+           impl-summary " "
            "Still, consider routing access through the interface for cleaner architecture.")
 
       ;; Leaky, somewhat stable
       leaky?
       (str "ISSUE: " impl-ns " implementation namespace(s) are required by other packages. "
            "This couples dependents to your internals. "
+           impl-summary " "
            "Consider exposing needed functions through the interface.")
 
       :else
@@ -511,21 +525,31 @@
    grid
    (vec text)))
 
+(defn- std-draw-quadrants
+  "Layer: Draw quadrant cross lines (vertical and horizontal through center).
+   This is a separate layer so it can be omitted for standard Robert Martin style."
+  [grid]
+  (let [center-r std-center-row
+        center-c std-center-col]
+    (as-> grid g
+      ;; Horizontal line
+      (reduce (fn [gr col] (std-overlay-char gr center-r col \─)) g (range std-cols))
+      ;; Vertical line
+      (reduce (fn [gr row] (std-overlay-char gr row center-c \│)) g (range std-rows))
+      ;; Center cross
+      (std-overlay-char g center-r center-c \┼))))
+
 (defn- std-draw-diagonal
   "Layer 2: Draw main sequence diagonal from top-left to bottom-right.
    Standard orientation: (0,1) at top-left to (1,0) at bottom-right.
-   Uses backslash character."
+   Uses backslash character with 2-char horizontal steps for straight line."
   [grid]
-  (let [last-row (dec std-rows)
-        last-col (dec std-cols)]
-    (reduce
-     (fn [g row]
-       ;; Diagonal from (row 0, col 1) to (row last-row-1, col last-col)
-       ;; Linear interpolation: col = 1 + row * (last-col - 1) / (last-row - 1)
-       (let [col (int (Math/round (double (+ 1 (* row (/ (- last-col 1) (- last-row 1)))))))]
-         (std-overlay-char g row col \\)))
-     grid
-     (range last-row))))
+  (reduce
+   (fn [g row]
+     (let [col (+ std-center-col (* 2 (- row std-center-row)))]
+       (std-overlay-char g row col \\)))
+   grid
+   (range std-rows)))
 
 (defn- std-position-to-grid
   "Convert I/A values to grid row/col positions.
@@ -680,6 +704,8 @@
         interface-ns (or (:abstract-ns m) 0)
         total-ns (or (:total-ns m) 0)
         impl-ns (- total-ns interface-ns)
+        impl-ns-details (or (:impl-ns-details m) {})
+        interface-ns-details (or (:interface-ns-details m) {})
         has-abstractness? (some? (:abstractness m))
         is-entry-point? (:entry-point? m)
         is-clojure-package? (= pkg-type :clojure-package)]
@@ -742,6 +768,20 @@
         (println (format "Abstractness (A): %.2f  [Formula: interface-ns / total-ns accessed by other packages]" (:abstractness m)))
         (println (format "  Access by other packages: %d interface ns, %d implementation ns" interface-ns impl-ns))
         (println)
+        ;; Show implementation namespace details if there are any (leaky abstraction)
+        (when (seq impl-ns-details)
+          (println "  Implementation namespaces accessed directly (leaky):")
+          (doseq [[ns-sym accessors] (sort-by (comp str first) impl-ns-details)]
+            (println (format "    %s" ns-sym))
+            (println (format "      accessed by: %s" (clojure.string/join ", " (sort accessors)))))
+          (println))
+        ;; Show interface namespace details
+        (when (seq interface-ns-details)
+          (println "  Interface namespaces accessed (clean):")
+          (doseq [[ns-sym accessors] (sort-by (comp str first) interface-ns-details)]
+            (println (format "    %s" ns-sym))
+            (println (format "      accessed by: %s" (clojure.string/join ", " (sort accessors)))))
+          (println))
         (println (str "  " (describe-abstractness (:abstractness m) interface-ns total-ns)))
         (println)
 

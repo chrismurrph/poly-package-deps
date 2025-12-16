@@ -137,6 +137,8 @@
          :distance d
          :abstract-ns (:abstract-ns abs-data)
          :total-ns (:total-ns abs-data)
+         :impl-ns-details (:impl-ns-details abs-data)
+         :interface-ns-details (:interface-ns-details abs-data)
          :entry-point? false})
 
       ;; No interface detection - skip A/D

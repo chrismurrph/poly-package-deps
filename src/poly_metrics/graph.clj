@@ -357,18 +357,35 @@
 (defn package-abstractness-data
   "Calculate abstractness data for a package.
    For types with interface detection: A = interface-ns / total-ns (externally accessed)
-   For :clojure-package: returns nil (no interface detection)."
+   For :clojure-package: returns nil (no interface detection).
+
+   Returns map with:
+   - :abstract-ns - count of interface namespaces accessed externally
+   - :total-ns - count of all namespaces accessed externally
+   - :abstractness - ratio (0-1)
+   - :impl-ns-details - map of {impl-ns-sym #{accessor-pkg-names}} for leaky namespaces
+   - :interface-ns-details - map of {ifc-ns-sym #{accessor-pkg-names}}"
   [root-dir package external-requires ns-to-pkg]
-  (let [pkg-type (:type package)]
+  (let [pkg-type (:type package)
+        pkg-name (:name package)]
     (if (= pkg-type :clojure-package)
       ;; No interface detection for plain Clojure packages
       nil
       ;; Calculate abstractness for Polylith/Polylith-like types
-      (let [visible-ns (package-externally-visible-namespaces root-dir package external-requires ns-to-pkg)
-            abstract-ns (count (filter #(interface-ns-for-package? % pkg-type) visible-ns))
+      (let [;; Get namespaces belonging to this package that are required externally
+            ;; Each entry is [ns-sym #{requiring-pkg-names}]
+            visible-entries (->> external-requires
+                                 (filter (fn [[req-ns _]]
+                                           (= pkg-name (get ns-to-pkg req-ns)))))
+            visible-ns (map first visible-entries)
+            interface-entries (filter #(interface-ns-for-package? (first %) pkg-type) visible-entries)
+            impl-entries (remove #(interface-ns-for-package? (first %) pkg-type) visible-entries)
+            abstract-ns (count interface-entries)
             total-ns (count visible-ns)]
         {:abstract-ns abstract-ns
          :total-ns total-ns
          :abstractness (if (zero? total-ns)
                          1.0  ;; No external access = fully abstract
-                         (double (/ abstract-ns total-ns)))}))))
+                         (double (/ abstract-ns total-ns)))
+         :impl-ns-details (into {} impl-entries)
+         :interface-ns-details (into {} interface-entries)}))))
